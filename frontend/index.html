@@ -1,1 +1,28 @@
-hello
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>智能家居助手</h2>
+
+<input id="input" placeholder="说点什么">
+<button onclick="run()">执行</button>
+
+<p id="result"></p>
+
+<script>
+async function run() {
+  const text = document.getElementById("input").value;
+
+  const res = await fetch(`http://localhost:5000/ai?text=${text}`);
+  const data = await res.json();
+
+  document.getElementById("result").innerText = "AI判断: " + data.action;
+
+  if (data.action === "air_on") {
+    await fetch("http://localhost:5000/air_on");
+  }
+}
+</script>
+
+</body>
+</html>
