@@ -1,28 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能家居助手</title>
+  <link rel="stylesheet" href="style.css">
+</head>
 <body>
+  <div class="container">
+    <h1>🏠 智能家居助手</h1>
 
-<h2>智能家居助手</h2>
+    <!-- 环境信息卡片 -->
+    <div class="env-card">
+      <h2>当前环境</h2>
+      <div class="env-info" id="env-info">
+        <span class="empty-tip">加载中...</span>
+      </div>
+    </div>
 
-<input id="input" placeholder="说点什么">
-<button onclick="run()">执行</button>
+    <!-- 设备列表卡片 -->
+    <div class="devices-card">
+      <h2>已配对设备</h2>
+      <div class="devices-list" id="devices-list">
+        <div class="empty-tip">加载中...</div>
+      </div>
+    </div>
 
-<p id="result"></p>
+    <!-- 对话卡片 -->
+    <div class="chat-card">
+      <h2>智能对话</h2>
 
-<script>
-async function run() {
-  const text = document.getElementById("input").value;
+      <!-- 输入区域 -->
+      <div class="input-area">
+        <input type="text" id="user-input" placeholder="请输入你的需求，例如：好热、打开空调、你能控制什么">
+        <button id="send-btn">发送</button>
+      </div>
 
-  const res = await fetch(`http://localhost:5000/ai?text=${text}`);
-  const data = await res.json();
+      <!-- AI 回复区域 -->
+      <div class="reply-area" id="reply-area" style="display: none;"></div>
 
-  document.getElementById("result").innerText = "AI判断: " + data.action;
+      <!-- 建议动作区域 -->
+      <div class="action-suggestion" id="action-suggestion">
+        <div class="suggestion-text" id="suggestion-text"></div>
+        <button id="confirm-btn" style="display: none;">确认执行</button>
+      </div>
 
-  if (data.action === "air_on") {
-    await fetch("http://localhost:5000/air_on");
-  }
-}
-</script>
+      <!-- 执行结果区域 -->
+      <div class="execute-result" id="execute-result">
+        <div class="result-text" id="result-text"></div>
+      </div>
+    </div>
+  </div>
 
+  <script src="app.js"></script>
 </body>
 </html>
