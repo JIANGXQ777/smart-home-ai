@@ -165,7 +165,6 @@ function showActionSuggestion(data) {
 function hideActionSuggestion() {
   document.getElementById('action-suggestion').classList.remove('show');
   document.getElementById('confirm-btn').style.display = 'none';
-  document.getElementById('execute-result').classList.remove('show');
 }
 
 // ============================================
