@@ -326,12 +326,12 @@ V1 阶段至少包含以下设备：
 | livingroom_fan | 客厅风扇 | fan | off |
 | livingroom_light | 客厅灯 | light | off |
 
-V1 阶段固定动作：
+当前动作：
 
 ```text
 turn_on
 turn_off
-set_temp_26
+set_temperature(value: 16-30)
 ```
 
 ---
@@ -448,7 +448,7 @@ GET
       "location": "卧室",
       "status": "off",
       "paired": true,
-      "actions": ["turn_on", "turn_off", "set_temp_26"]
+      "actions": ["turn_on", "turn_off", "set_temperature"]
     },
     {
       "id": "livingroom_fan",
@@ -674,12 +674,12 @@ livingroom_light
 
 动作命令使用英文小写和下划线。
 
-V1 固定动作：
+当前固定命令名：
 
 ```text
 turn_on
 turn_off
-set_temp_26
+set_temperature
 ```
 
 不得混用以下写法：
@@ -837,15 +837,15 @@ on
 off
 ```
 
-### 11.4 set_temp_26
+### 11.4 set_temperature
 
-执行 `set_temp_26` 后，卧室空调状态应保持或变为：
+执行 `set_temperature` 且传入合法 `value` 后，卧室空调状态应保持或变为：
 
 ```text
 on
 ```
 
-V1 阶段可以不记录具体温度设定值，后续版本再扩展 `temperatureSetting` 字段。
+系统会记录具体温度设定值到 `targetTemperature` 字段。
 
 ---
 
@@ -962,7 +962,7 @@ V1 阶段可以不记录具体温度设定值，后续版本再扩展 `temperatu
 请严格遵守 docs/API.md 中的 deviceId 和 command 命名。
 
 任务：
-定义 bedroom_ac、livingroom_fan、livingroom_light 三个设备，并实现 turn_on、turn_off、set_temp_26 的虚拟执行逻辑。
+定义 bedroom_ac、livingroom_fan、livingroom_light 三个设备，并实现 turn_on、turn_off、set_temperature 的虚拟执行逻辑。
 ```
 
 ---

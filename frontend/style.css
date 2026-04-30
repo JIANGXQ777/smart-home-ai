@@ -466,6 +466,7 @@ button {
 }
 
 .device-meta {
+  display: block;
   margin-top: 8px;
   color: var(--muted);
   font-size: 12px;

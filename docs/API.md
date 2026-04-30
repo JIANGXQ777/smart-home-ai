@@ -38,8 +38,9 @@
 | `type` | string | `"air_conditioner"` | 设备类型 |
 | `location` | string | `"卧室"` | 设备所在位置 |
 | `status` | string | `"off"` | 设备当前状态，取值为 `on` 或 `off` |
+| `targetTemperature` | number 或 null | `26` | 空调当前设定温度，仅空调设备使用 |
 | `paired` | boolean | `true` | 设备是否已配对 |
-| `actions` | string[] | `["turn_on", "turn_off"]` | 设备支持的动作列表 |
+| `actions` | string[] | `["turn_on", "turn_off"]` | 设备支持的动作列表，`set_temperature` 需要同时传入 `value` |
 
 ### Action
 
@@ -47,6 +48,7 @@
 |---|---|---|---|
 | `deviceId` | string | `"bedroom_ac"` | 目标设备 ID |
 | `command` | string | `"turn_on"` | 目标动作命令 |
+| `value` | number | `26` | 可选参数，`set_temperature` 时表示目标温度 |
 
 ## 设备与命令枚举
 
@@ -54,7 +56,7 @@
 
 | 设备 ID | 名称 | 类型 | 位置 | 初始状态 | 支持动作 |
 |---|---|---|---|---|---|
-| `bedroom_ac` | 卧室空调 | `air_conditioner` | 卧室 | `off` | `turn_on`, `turn_off`, `set_temp_26` |
+| `bedroom_ac` | 卧室空调 | `air_conditioner` | 卧室 | `off` | `turn_on`, `turn_off`, `set_temperature` |
 | `livingroom_fan` | 客厅风扇 | `fan` | 客厅 | `off` | `turn_on`, `turn_off` |
 | `livingroom_light` | 客厅灯 | `light` | 客厅 | `off` | `turn_on`, `turn_off` |
 
@@ -64,7 +66,7 @@
 |---|---|---|
 | `turn_on` | 打开设备 | `on` |
 | `turn_off` | 关闭设备 | `off` |
-| `set_temp_26` | 将空调设置为 26 度 | `on` |
+| `set_temperature` | 将空调设置为指定温度，`value` 范围为 16 到 30 的整数 | `on` |
 
 ## GET /api/state
 
@@ -95,7 +97,7 @@
       "location": "卧室",
       "status": "off",
       "paired": true,
-      "actions": ["turn_on", "turn_off", "set_temp_26"]
+      "actions": ["turn_on", "turn_off", "set_temperature"]
     },
     {
       "id": "livingroom_fan",

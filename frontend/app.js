@@ -14,7 +14,7 @@ const deviceNameMap = {
 const commandTextMap = {
   turn_on: '打开',
   turn_off: '关闭',
-  set_temp_26: '设置为 26 度'
+  set_temperature: '调节温度'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -105,11 +105,23 @@ function renderDevices(devices) {
       <div class="device-info">
         <span class="device-name">${device.name}</span>
         <span class="device-location">${device.location} · ${formatDeviceType(device.type)}</span>
-        <span class="device-meta">支持：${device.actions.map(formatCommand).join(' / ')}</span>
+        ${renderDeviceDetails(device)}
       </div>
       <span class="device-status ${device.status}">${device.status === 'on' ? '已开启' : '已关闭'}</span>
     </div>
   `).join('');
+}
+
+function renderDeviceDetails(device) {
+  const details = [];
+
+  if (device.type === 'air_conditioner' && device.status === 'on' && device.targetTemperature) {
+    details.push(`设定温度：${device.targetTemperature} 度`);
+  }
+
+  details.push(`可用动作：${device.actions.map(formatCommand).join(' / ')}`);
+
+  return details.map(detail => `<span class="device-meta">${detail}</span>`).join('');
 }
 
 async function sendMessage() {
@@ -138,20 +150,24 @@ async function sendMessage() {
 
     const data = await res.json();
     setConnectionStatus(true);
-    showReply(data.reply || '我暂时没有可展示的回复。');
+    const reply = data.reply || '我暂时没有可展示的回复。';
+    appendMessage('assistant', reply);
 
     if (data.needConfirm && data.action) {
       pendingAction = data.action;
       showActionSuggestion(data.action);
+      hideReplyArea();
     } else {
       pendingAction = null;
+      hideReplyArea();
     }
 
     input.value = '';
   } catch (err) {
     console.error('发送消息失败:', err);
     setConnectionStatus(false);
-    showReply('抱歉，AI 助手暂时无法响应。');
+    hideReplyArea();
+    appendMessage('assistant', '抱歉，AI 助手暂时无法响应。');
     showStatus('请求失败，请确认后端服务和大模型配置正常。');
     pendingAction = null;
   } finally {
@@ -159,14 +175,15 @@ async function sendMessage() {
   }
 }
 
-function showReply(text) {
+function showReply(text, label = '当前建议') {
   const replyArea = document.getElementById('reply-area');
   const replyText = document.getElementById('reply-text');
+  const replyLabel = replyArea.querySelector('.reply-label');
 
   replyArea.classList.remove('thinking');
+  replyLabel.textContent = label;
   replyText.textContent = text;
   replyArea.hidden = false;
-  appendMessage('assistant', text);
 }
 
 function showThinking() {
@@ -176,6 +193,12 @@ function showThinking() {
   replyArea.classList.add('thinking');
   replyText.textContent = 'AI 正在结合环境和设备状态生成建议...';
   replyArea.hidden = false;
+}
+
+function hideReplyArea() {
+  const replyArea = document.getElementById('reply-area');
+  replyArea.classList.remove('thinking');
+  replyArea.hidden = true;
 }
 
 function appendMessage(role, text) {
@@ -203,7 +226,7 @@ function showActionSuggestion(action) {
   const confirmBtn = document.getElementById('confirm-btn');
 
   const deviceName = formatDeviceName(action.deviceId);
-  const actionText = formatCommand(action.command);
+  const actionText = formatAction(action);
 
   suggestionText.textContent = `${deviceName} · ${actionText}`;
   actionDiv.hidden = false;
@@ -218,7 +241,7 @@ function hideActionSuggestion() {
 async function confirmExecute() {
   if (!pendingAction) return;
 
-  const { deviceId, command } = pendingAction;
+  const { deviceId, command, value } = pendingAction;
 
   setLoading('execute', true);
   showStatus('');
@@ -227,7 +250,7 @@ async function confirmExecute() {
     const res = await fetch(`${API_BASE}/api/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, command })
+      body: JSON.stringify({ deviceId, command, value })
     });
 
     if (!res.ok) {
@@ -311,6 +334,14 @@ function formatDeviceName(deviceId) {
 
 function formatCommand(command) {
   return commandTextMap[command] || command;
+}
+
+function formatAction(action) {
+  if (action.command === 'set_temperature') {
+    return `设置为 ${action.value} 度`;
+  }
+
+  return formatCommand(action.command);
 }
 
 function formatDeviceType(type) {

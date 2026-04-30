@@ -66,7 +66,7 @@ app.post("/api/chat", async (req, res) => {
 // 用户确认后执行设备动作
 // ============================================
 app.post("/api/execute", (req, res) => {
-  const { deviceId, command } = req.body;
+  const { deviceId, command, value } = req.body;
 
   // 校验必填字段
   if (!deviceId || !command) {
@@ -77,7 +77,7 @@ app.post("/api/execute", (req, res) => {
   }
 
   // 调用执行模块
-  const result = execute(deviceId, command);
+  const result = execute(deviceId, command, value);
   res.json(result);
 });
 

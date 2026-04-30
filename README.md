@@ -125,12 +125,13 @@ frontend/index.html
 
 ```json
 {
-  "reply": "当前卧室温度29度，睡前会偏热。我建议把卧室空调设置为26度，需要我帮你设置吗？",
+  "reply": "当前卧室温度29度，睡前会偏热。我建议把卧室空调设置为25度，需要我帮你设置吗？",
   "intent": "comfort_sleep",
   "needConfirm": true,
   "action": {
     "deviceId": "bedroom_ac",
-    "command": "set_temp_26"
+    "command": "set_temperature",
+    "value": 25
   }
 }
 ```
@@ -140,7 +141,8 @@ frontend/index.html
 ```json
 {
   "deviceId": "bedroom_ac",
-  "command": "set_temp_26"
+  "command": "set_temperature",
+  "value": 25
 }
 ```
 
@@ -148,7 +150,7 @@ frontend/index.html
 
 | 设备 ID | 名称 | 位置 | 支持动作 |
 |---|---|---|---|
-| `bedroom_ac` | 卧室空调 | 卧室 | `turn_on`, `turn_off`, `set_temp_26` |
+| `bedroom_ac` | 卧室空调 | 卧室 | `turn_on`, `turn_off`, `set_temperature` |
 | `livingroom_fan` | 客厅风扇 | 客厅 | `turn_on`, `turn_off` |
 | `livingroom_light` | 客厅灯 | 客厅 | `turn_on`, `turn_off` |
 

@@ -9,8 +9,9 @@ const devices = [
     type: "air_conditioner",
     location: "卧室",
     status: "off",
+    targetTemperature: null,
     paired: true,
-    actions: ["turn_on", "turn_off", "set_temp_26"]
+    actions: ["turn_on", "turn_off", "set_temperature"]
   },
   {
     id: "livingroom_fan",
@@ -61,6 +62,16 @@ function updateDeviceStatus(deviceId, newStatus) {
   return false;
 }
 
+// 更新设备字段
+function updateDevice(deviceId, updates) {
+  const device = devices.find(d => d.id === deviceId);
+  if (device) {
+    Object.assign(device, updates);
+    return true;
+  }
+  return false;
+}
+
 // 获取环境信息
 function getEnvironment() {
   return environment;
@@ -72,5 +83,6 @@ module.exports = {
   getDevices,
   getDevice,
   updateDeviceStatus,
+  updateDevice,
   getEnvironment
 };

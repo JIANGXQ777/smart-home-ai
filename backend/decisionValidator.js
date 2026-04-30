@@ -8,6 +8,22 @@ function invalid(reason) {
   };
 }
 
+function hasNoStateChange(device, command, value) {
+  if (command === 'turn_on') {
+    return device.status === 'on';
+  }
+
+  if (command === 'turn_off') {
+    return device.status === 'off';
+  }
+
+  if (command === 'set_temperature') {
+    return device.status === 'on' && device.targetTemperature === value;
+  }
+
+  return false;
+}
+
 function validateDecision(decision, devices) {
   if (!decision || typeof decision !== 'object' || Array.isArray(decision)) {
     return invalid('decision must be an object');
@@ -45,7 +61,7 @@ function validateDecision(decision, devices) {
     return invalid('action must be an object when needConfirm is true');
   }
 
-  const { deviceId, command } = decision.action;
+  const { deviceId, command, value } = decision.action;
   if (typeof deviceId !== 'string' || typeof command !== 'string') {
     return invalid('action.deviceId and action.command must be strings');
   }
@@ -59,16 +75,38 @@ function validateDecision(decision, devices) {
     return invalid('command must be supported by the device');
   }
 
+  if (command === 'set_temperature') {
+    if (device.type !== 'air_conditioner') {
+      return invalid('set_temperature only supports air conditioners');
+    }
+
+    if (!Number.isInteger(value) || value < 16 || value > 30) {
+      return invalid('temperature value must be an integer from 16 to 30');
+    }
+  } else if (value !== undefined) {
+    return invalid('value is only supported by parameterized commands');
+  }
+
+  if (hasNoStateChange(device, command, value)) {
+    return invalid('command would not change device state');
+  }
+
+  const action = {
+    deviceId,
+    command
+  };
+
+  if (command === 'set_temperature') {
+    action.value = value;
+  }
+
   return {
     valid: true,
     decision: {
       reply: decision.reply.trim(),
       intent: decision.intent.trim(),
       needConfirm: true,
-      action: {
-        deviceId,
-        command
-      }
+      action
     }
   };
 }
