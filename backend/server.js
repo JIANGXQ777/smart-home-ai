@@ -1,6 +1,8 @@
 // 后端主服务
 // 实现三个核心 API 接口
 
+require('dotenv').config({ quiet: true });
+
 const express = require("express");
 const app = express();
 
@@ -36,7 +38,7 @@ app.get("/api/state", (req, res) => {
 // 接口 2: POST /api/chat
 // 接收用户输入，返回 AI 决策建议
 // ============================================
-app.post("/api/chat", (req, res) => {
+app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
 
   // 校验必填字段
@@ -44,9 +46,19 @@ app.post("/api/chat", (req, res) => {
     return res.status(400).json({ error: "缺少 message 字段" });
   }
 
-  // 调用 AI 决策模块
-  const result = decide(message);
-  res.json(result);
+  try {
+    // 调用 AI 决策模块
+    const result = await decide(message);
+    res.json(result);
+  } catch (err) {
+    console.error("AI 决策失败:", err);
+    res.status(500).json({
+      reply: "抱歉，AI 决策服务暂时不可用。",
+      intent: "error",
+      needConfirm: false,
+      action: null
+    });
+  }
 });
 
 // ============================================

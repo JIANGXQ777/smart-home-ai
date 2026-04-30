@@ -94,6 +94,8 @@ npm start
 - **V5**：真实硬件控制（ESP32 + 红外模块）
 - **V6**：主动智能提醒
 
+V2 后端开发说明见 `docs/V2_DEVELOPMENT_PLAN.md`。
+
 ## 团队分工
 
 - A：前端界面
