@@ -3,53 +3,98 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>智能家居助手</title>
+  <title>Smart Home AI 控制台</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>🏠 智能家居助手</h1>
-
-    <!-- 环境信息卡片 -->
-    <div class="env-card">
-      <h2>当前环境</h2>
-      <div class="env-info" id="env-info">
-        <span class="empty-tip">加载中...</span>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Smart Home AI</p>
+        <h1>智能家居 AI 控制台</h1>
       </div>
-    </div>
-
-    <!-- 设备列表卡片 -->
-    <div class="devices-card">
-      <h2>已配对设备</h2>
-      <div class="devices-list" id="devices-list">
-        <div class="empty-tip">加载中...</div>
+      <div class="topbar-actions">
+        <span class="mode-badge">V2 AI 决策</span>
+        <span class="connection-pill offline" id="connection-status">正在连接</span>
       </div>
-    </div>
+    </header>
 
-    <!-- 对话卡片 -->
-    <div class="chat-card">
-      <h2>智能对话</h2>
+    <main class="dashboard-grid">
+      <section class="panel env-panel" aria-labelledby="env-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Environment</p>
+            <h2 id="env-title">当前环境</h2>
+          </div>
+        </div>
+        <div class="env-info" id="env-info">
+          <div class="empty-state">正在加载环境数据</div>
+        </div>
+      </section>
 
-      <!-- 输入区域 -->
-      <div class="input-area">
-        <input type="text" id="user-input" placeholder="请输入你的需求，例如：好热、打开空调、你能控制什么">
-        <button id="send-btn">发送</button>
-      </div>
+      <section class="panel chat-panel" aria-labelledby="chat-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Assistant</p>
+            <h2 id="chat-title">AI 助手</h2>
+          </div>
+        </div>
 
-      <!-- AI 回复区域 -->
-      <div class="reply-area" id="reply-area" style="display: none;"></div>
+        <div class="status-message" id="status-message" hidden></div>
 
-      <!-- 建议动作区域 -->
-      <div class="action-suggestion" id="action-suggestion">
-        <div class="suggestion-text" id="suggestion-text"></div>
-        <button id="confirm-btn" style="display: none;">确认执行</button>
-      </div>
+        <div class="chat-stream" id="chat-stream">
+          <div class="welcome-card" id="welcome-card">
+            <div class="welcome-title">今晚可以从这几件事开始</div>
+            <div class="quick-prompts" aria-label="快捷输入">
+              <button class="quick-prompt" type="button" data-prompt="睡觉前帮我调舒服一点">睡前舒适</button>
+              <button class="quick-prompt" type="button" data-prompt="客厅太暗了">客厅太暗</button>
+              <button class="quick-prompt" type="button" data-prompt="你能控制什么">设备能力</button>
+            </div>
+          </div>
+        </div>
 
-      <!-- 执行结果区域 -->
-      <div class="execute-result" id="execute-result">
-        <div class="result-text" id="result-text"></div>
-      </div>
-    </div>
+        <div class="reply-area" id="reply-area" hidden>
+          <div class="reply-label">当前建议</div>
+          <p class="reply-text" id="reply-text"></p>
+        </div>
+
+        <div class="action-suggestion" id="action-suggestion" hidden>
+          <div>
+            <div class="suggestion-label">建议动作</div>
+            <div class="suggestion-text" id="suggestion-text"></div>
+          </div>
+          <button id="confirm-btn" class="secondary-button" type="button" hidden>确认执行</button>
+        </div>
+
+        <div class="execute-result" id="execute-result" hidden>
+          <span class="result-dot"></span>
+          <span class="result-text" id="result-text"></span>
+        </div>
+
+        <div class="input-area">
+          <input
+            type="text"
+            id="user-input"
+            placeholder="例如：睡觉前帮我调舒服一点"
+            autocomplete="off"
+          >
+          <button id="send-btn" class="primary-button" type="button">发送</button>
+        </div>
+      </section>
+
+      <section class="panel devices-panel" aria-labelledby="devices-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Devices</p>
+            <h2 id="devices-title">已配对设备</h2>
+          </div>
+          <span class="device-count" id="device-count">0 台</span>
+        </div>
+        <div class="devices-list" id="devices-list">
+          <div class="empty-state">正在加载设备</div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script src="app.js"></script>
