@@ -1,35 +1,80 @@
 // 设备数据模块
 // 定义已配对的设备和初始状态
 
-// V1 阶段固定设备列表
+// 当前阶段使用虚拟设备模拟未来的红外家电
 const devices = [
   {
     id: "bedroom_ac",
     name: "卧室空调",
     type: "air_conditioner",
     location: "卧室",
+    controlType: "ir",
     status: "off",
+    assumedState: "off",
     targetTemperature: null,
+    lastCommand: null,
+    stateConfidence: "assumed",
     paired: true,
-    actions: ["turn_on", "turn_off", "set_temperature"]
+    actions: ["turn_on", "turn_off", "set_temperature"],
+    capabilities: {
+      power: true,
+      temperature: {
+        min: 16,
+        max: 30,
+        step: 1,
+        unit: "celsius"
+      },
+      mode: ["cool", "heat", "dry", "fan"],
+      fanSpeed: ["low", "medium", "high", "auto"]
+    },
+    irProfile: {
+      brand: "unknown",
+      model: "unknown",
+      learnedCodes: {}
+    }
   },
   {
     id: "livingroom_fan",
     name: "客厅风扇",
     type: "fan",
     location: "客厅",
+    controlType: "ir",
     status: "off",
+    assumedState: "off",
+    lastCommand: null,
+    stateConfidence: "assumed",
     paired: true,
-    actions: ["turn_on", "turn_off"]
+    actions: ["turn_on", "turn_off"],
+    capabilities: {
+      power: true,
+      fanSpeed: ["low", "medium", "high"]
+    },
+    irProfile: {
+      brand: "unknown",
+      model: "unknown",
+      learnedCodes: {}
+    }
   },
   {
     id: "livingroom_light",
     name: "客厅灯",
     type: "light",
     location: "客厅",
+    controlType: "ir",
     status: "off",
+    assumedState: "off",
+    lastCommand: null,
+    stateConfidence: "assumed",
     paired: true,
-    actions: ["turn_on", "turn_off"]
+    actions: ["turn_on", "turn_off"],
+    capabilities: {
+      power: true
+    },
+    irProfile: {
+      brand: "unknown",
+      model: "unknown",
+      learnedCodes: {}
+    }
   }
 ];
 

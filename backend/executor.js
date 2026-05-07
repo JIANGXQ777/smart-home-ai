@@ -30,7 +30,15 @@ function execute(deviceId, command, value) {
 
   // 3. 执行命令
   let newStatus = device.status;
-  let updates = {};
+  let updates = {
+    lastCommand: {
+      command,
+      value: value === undefined ? null : value,
+      source: "virtual_executor",
+      executedAt: new Date().toISOString()
+    },
+    stateConfidence: device.controlType === "ir" ? "assumed" : "reported"
+  };
   let message = "";
 
   switch (command) {
@@ -43,10 +51,15 @@ function execute(deviceId, command, value) {
       message = `${device.name}已关闭`;
       break;
     case "set_temperature":
-      if (!Number.isInteger(value) || value < 16 || value > 30) {
+      const temperatureCapability = device.capabilities && device.capabilities.temperature;
+      const min = temperatureCapability ? temperatureCapability.min : 16;
+      const max = temperatureCapability ? temperatureCapability.max : 30;
+      const step = temperatureCapability ? temperatureCapability.step || 1 : 1;
+
+      if (!Number.isInteger(value) || value < min || value > max || (value - min) % step !== 0) {
         return {
           success: false,
-          message: "空调温度只能设置为16到30度之间的整数"
+          message: `空调温度只能设置为${min}到${max}度之间的整数`
         };
       }
       newStatus = "on";
@@ -63,6 +76,7 @@ function execute(deviceId, command, value) {
   // 4. 更新设备状态
   const updated = updateDevice(deviceId, {
     status: newStatus,
+    assumedState: newStatus,
     ...updates
   });
   if (!updated) {
@@ -78,7 +92,9 @@ function execute(deviceId, command, value) {
     message: message,
     deviceId: deviceId,
     status: newStatus,
-    targetTemperature: device.targetTemperature
+    assumedState: newStatus,
+    targetTemperature: command === "set_temperature" ? value : device.targetTemperature,
+    stateConfidence: updates.stateConfidence
   };
 }
 

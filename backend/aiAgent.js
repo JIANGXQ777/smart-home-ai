@@ -60,9 +60,14 @@ function decideDirectControl(message, devices) {
     return unsupportedSpecificActionReply();
   }
 
-  if (temperature < 16 || temperature > 30) {
+  const temperatureCapability = ac.capabilities && ac.capabilities.temperature;
+  const min = temperatureCapability ? temperatureCapability.min : 16;
+  const max = temperatureCapability ? temperatureCapability.max : 30;
+  const step = temperatureCapability ? temperatureCapability.step || 1 : 1;
+
+  if (temperature < min || temperature > max || (temperature - min) % step !== 0) {
     return {
-      reply: "空调温度只能设置为16到30度之间的整数。",
+      reply: `空调温度只能设置为${min}到${max}度之间的整数。`,
       intent: "unsupported_action",
       needConfirm: false,
       action: null

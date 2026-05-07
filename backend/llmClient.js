@@ -24,8 +24,11 @@ function buildSystemPrompt() {
     '只要 action 不是 null，needConfirm 必须是 true。',
     '如果生成设备动作，只能选择 paired=true 的设备。',
     '如果生成设备动作，只能选择设备 actions 中存在的 command。',
-    '空调支持参数化温度控制：当 air_conditioner 的 actions 包含 set_temperature 时，可以返回 action.value 表示目标温度。',
-    'set_temperature 的 value 必须是 16 到 30 之间的整数。',
+    '设备可能包含 capabilities，表示红外家电可控能力；优先根据 capabilities 判断设备能做什么。',
+    '设备 controlType=ir 表示未来通过红外控制，当前阶段只生成建议，不能声称已经真实发射红外。',
+    '设备 assumedState 表示系统推测状态，stateConfidence=assumed 表示状态来自最后命令推测而非设备真实上报。',
+    '空调支持参数化温度控制：当 capabilities.temperature 存在且 actions 包含 set_temperature 时，可以返回 action.value 表示目标温度。',
+    'set_temperature 的 value 必须符合 capabilities.temperature 的 min、max、step。',
     '如果用户要求的具体动作不在设备 actions 中，必须说明当前不支持该具体动作，needConfirm=false 且 action=null。',
     '如果设备不存在、动作不支持、用户没有控制意图或不需要控制设备，必须返回 action=null 且 needConfirm=false。',
     '如果设备已经处于目标状态，不要重复建议同一个动作，可以解释当前状态。',
@@ -46,6 +49,8 @@ function buildUserPrompt({ message, environment, devices }) {
     deviceStateNotes: [
       'air_conditioner 可能包含 targetTemperature，表示当前设定温度。',
       'targetTemperature 表示空调当前设定温度，不是室内环境温度。',
+      'controlType=ir 表示红外控制设备；当前软件原型记录的是推测状态。',
+      'capabilities 描述设备能力，irProfile 预留品牌、型号和红外码映射。',
       '不要在 reply 中声称已经执行或将要执行不在 actions 中的动作。'
     ],
     outputExamples: [

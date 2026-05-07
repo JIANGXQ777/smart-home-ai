@@ -24,6 +24,12 @@ function hasNoStateChange(device, command, value) {
   return false;
 }
 
+function getTemperatureCapability(device) {
+  return device &&
+    device.capabilities &&
+    device.capabilities.temperature;
+}
+
 function validateDecision(decision, devices) {
   if (!decision || typeof decision !== 'object' || Array.isArray(decision)) {
     return invalid('decision must be an object');
@@ -76,12 +82,22 @@ function validateDecision(decision, devices) {
   }
 
   if (command === 'set_temperature') {
-    if (device.type !== 'air_conditioner') {
-      return invalid('set_temperature only supports air conditioners');
+    const temperatureCapability = getTemperatureCapability(device);
+
+    if (!temperatureCapability) {
+      return invalid('set_temperature requires temperature capability');
     }
 
-    if (!Number.isInteger(value) || value < 16 || value > 30) {
-      return invalid('temperature value must be an integer from 16 to 30');
+    const min = Number(temperatureCapability.min);
+    const max = Number(temperatureCapability.max);
+    const step = Number(temperatureCapability.step || 1);
+
+    if (!Number.isInteger(value) || value < min || value > max) {
+      return invalid(`temperature value must be an integer from ${min} to ${max}`);
+    }
+
+    if ((value - min) % step !== 0) {
+      return invalid(`temperature value must follow step ${step}`);
     }
   } else if (value !== undefined) {
     return invalid('value is only supported by parameterized commands');

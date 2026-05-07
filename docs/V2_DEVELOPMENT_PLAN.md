@@ -2,7 +2,7 @@
 
 ## V2 定位
 
-V2 将 Smart Home AI 从 V1 的关键词规则 Demo 升级为偏智能家居场景的通用家庭助手。
+V2 将 Smart Home AI 从 V1 的关键词规则 Demo 升级为偏智能家居场景的通用家庭助手。V2.2 开始进一步贴合项目真实方向：面向传统红外家电的智能化改造。
 
 大模型不只负责判断用户意图，也可以回答家电知识、节能建议、生活场景建议和简单闲聊。只有当用户明确要求控制设备，或场景需求非常适合通过当前设备解决时，才生成安全、可解释、可执行的家居控制建议。
 
@@ -52,6 +52,10 @@ ${LLM_BASE_URL}/chat/completions
 - 知识问答、闲聊、设备能力说明等场景可以只返回自然语言回答，不必生成设备动作。
 - 只有明确控制意图或强场景匹配时，才返回 `needConfirm=true` 和 `action`。
 - 空调设备会暴露 `targetTemperature`，并通过 `set_temperature + value` 支持 16 到 30 度的参数化温度控制。
+- V2.2 设备会暴露 `controlType`、`capabilities`、`irProfile`、`assumedState`、`lastCommand` 和 `stateConfidence`。
+- `capabilities` 用于告诉 AI 红外家电具备哪些可控能力，例如开关、温度、模式、风速。
+- `controlType=ir` 表示该设备未来通过红外控制；当前软件原型只更新推测状态，不声称真实硬件已执行。
+- `stateConfidence=assumed` 表示状态来自系统推测，适用于传统红外设备通常不会回传状态的场景。
 - 大模型调用失败、超时、返回非 JSON 或返回非法动作时，系统返回无动作提示，不执行规则兜底。
 - 后端会校验模型结果，只允许已配对设备和设备支持的动作。
 
@@ -65,7 +69,45 @@ ${LLM_BASE_URL}/chat/completions
 - `needConfirm=false` 时，`action` 必须为 `null`。
 - `needConfirm=true` 时，`action.deviceId` 必须是已配对设备。
 - `needConfirm=true` 时，`action.command` 必须存在于该设备的 `actions` 中。
+- `set_temperature` 必须符合设备 `capabilities.temperature` 中定义的 `min`、`max` 和 `step`。
 - 如果动作不会改变设备状态，例如空调已经开启且设定温度等于目标 `value` 时再次返回 `set_temperature`，后端会改为无动作响应。
+
+## V2.2 红外设备能力模型
+
+V2.2 保持 API 不变，但升级设备对象，让软件原型提前具备红外旧家电接入所需的数据结构。
+
+示例：
+
+```json
+{
+  "id": "bedroom_ac",
+  "name": "卧室空调",
+  "type": "air_conditioner",
+  "controlType": "ir",
+  "status": "off",
+  "assumedState": "off",
+  "targetTemperature": null,
+  "lastCommand": null,
+  "stateConfidence": "assumed",
+  "actions": ["turn_on", "turn_off", "set_temperature"],
+  "capabilities": {
+    "power": true,
+    "temperature": {
+      "min": 16,
+      "max": 30,
+      "step": 1,
+      "unit": "celsius"
+    },
+    "mode": ["cool", "heat", "dry", "fan"],
+    "fanSpeed": ["low", "medium", "high", "auto"]
+  },
+  "irProfile": {
+    "brand": "unknown",
+    "model": "unknown",
+    "learnedCodes": {}
+  }
+}
+```
 
 ## V2 验收场景
 

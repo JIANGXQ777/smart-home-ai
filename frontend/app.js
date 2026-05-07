@@ -115,11 +115,19 @@ function renderDevices(devices) {
 function renderDeviceDetails(device) {
   const details = [];
 
+  if (device.controlType) {
+    details.push(`控制方式：${formatControlType(device.controlType)}`);
+  }
+
+  if (device.stateConfidence) {
+    details.push(`状态来源：${formatStateConfidence(device.stateConfidence)}`);
+  }
+
   if (device.type === 'air_conditioner' && device.status === 'on' && device.targetTemperature) {
     details.push(`设定温度：${device.targetTemperature} 度`);
   }
 
-  details.push(`可用动作：${device.actions.map(formatCommand).join(' / ')}`);
+  details.push(`可用能力：${formatCapabilities(device)}`);
 
   return details.map(detail => `<span class="device-meta">${detail}</span>`).join('');
 }
@@ -334,6 +342,51 @@ function formatDeviceName(deviceId) {
 
 function formatCommand(command) {
   return commandTextMap[command] || command;
+}
+
+function formatCapabilities(device) {
+  const capabilities = device.capabilities || {};
+  const labels = [];
+
+  if (capabilities.power) {
+    labels.push('开关');
+  }
+
+  if (capabilities.temperature) {
+    const { min, max } = capabilities.temperature;
+    labels.push(`温度 ${min}-${max} 度`);
+  }
+
+  if (Array.isArray(capabilities.mode) && capabilities.mode.length > 0) {
+    labels.push('模式');
+  }
+
+  if (Array.isArray(capabilities.fanSpeed) && capabilities.fanSpeed.length > 0) {
+    labels.push('风速');
+  }
+
+  if (labels.length > 0) {
+    return labels.join(' / ');
+  }
+
+  return device.actions.map(formatCommand).join(' / ');
+}
+
+function formatControlType(controlType) {
+  const controlTypeMap = {
+    ir: '红外'
+  };
+
+  return controlTypeMap[controlType] || controlType;
+}
+
+function formatStateConfidence(stateConfidence) {
+  const confidenceMap = {
+    assumed: '系统推测',
+    reported: '设备上报'
+  };
+
+  return confidenceMap[stateConfidence] || stateConfidence;
 }
 
 function formatAction(action) {

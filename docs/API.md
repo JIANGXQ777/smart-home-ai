@@ -1,6 +1,6 @@
 # Smart Home AI API 文档
 
-本文档描述 Smart Home AI V1 阶段的后端 HTTP API。当前版本为文字版 Demo，设备和环境数据均为内存模拟数据。
+本文档描述 Smart Home AI 当前阶段的后端 HTTP API。当前版本为红外旧家电改造的软件原型，设备和环境数据均为内存模拟数据。
 
 ## 基础信息
 
@@ -37,10 +37,16 @@
 | `name` | string | `"卧室空调"` | 设备显示名称 |
 | `type` | string | `"air_conditioner"` | 设备类型 |
 | `location` | string | `"卧室"` | 设备所在位置 |
+| `controlType` | string | `"ir"` | 控制方式，`ir` 表示红外控制设备 |
 | `status` | string | `"off"` | 设备当前状态，取值为 `on` 或 `off` |
+| `assumedState` | string | `"off"` | 系统根据最后一次命令推测出的设备状态 |
 | `targetTemperature` | number 或 null | `26` | 空调当前设定温度，仅空调设备使用 |
+| `lastCommand` | object 或 null | `{ "command": "turn_on" }` | 最后一次执行的命令记录 |
+| `stateConfidence` | string | `"assumed"` | 状态可信度，红外设备通常为系统推测 |
 | `paired` | boolean | `true` | 设备是否已配对 |
 | `actions` | string[] | `["turn_on", "turn_off"]` | 设备支持的动作列表，`set_temperature` 需要同时传入 `value` |
+| `capabilities` | object | `{ "power": true }` | 设备能力模型，用于描述红外家电可控能力 |
+| `irProfile` | object | `{ "brand": "unknown" }` | 红外档案，预留品牌、型号和红外码映射 |
 
 ### Action
 
@@ -95,9 +101,30 @@
       "name": "卧室空调",
       "type": "air_conditioner",
       "location": "卧室",
+      "controlType": "ir",
       "status": "off",
+      "assumedState": "off",
+      "targetTemperature": null,
+      "lastCommand": null,
+      "stateConfidence": "assumed",
       "paired": true,
-      "actions": ["turn_on", "turn_off", "set_temperature"]
+      "actions": ["turn_on", "turn_off", "set_temperature"],
+      "capabilities": {
+        "power": true,
+        "temperature": {
+          "min": 16,
+          "max": 30,
+          "step": 1,
+          "unit": "celsius"
+        },
+        "mode": ["cool", "heat", "dry", "fan"],
+        "fanSpeed": ["low", "medium", "high", "auto"]
+      },
+      "irProfile": {
+        "brand": "unknown",
+        "model": "unknown",
+        "learnedCodes": {}
+      }
     },
     {
       "id": "livingroom_fan",

@@ -358,9 +358,10 @@ device-simulator/device.js
 5. 定义设备位置；
 6. 定义设备初始状态；
 7. 定义设备支持动作；
-8. 模拟设备执行动作；
-9. 更新设备状态；
-10. 返回执行结果。
+8. 定义红外设备能力模型；
+9. 模拟设备执行动作；
+10. 更新设备状态和推测状态；
+11. 返回执行结果。
 
 当前软件原型至少包含以下虚拟设备，用于模拟未来可通过红外控制的传统家电：
 
@@ -376,6 +377,17 @@ device-simulator/device.js
 turn_on
 turn_off
 set_temperature(value: 16-30)
+```
+
+V2.2 起设备对象需要包含以下红外改造相关字段：
+
+```text
+controlType：控制方式，当前使用 ir
+capabilities：设备能力，例如开关、温度、模式、风速
+irProfile：红外档案，预留品牌、型号和 learnedCodes
+assumedState：系统根据最后命令推测出的状态
+lastCommand：最后一次执行命令
+stateConfidence：状态可信度，红外设备默认为 assumed
 ```
 
 ---
