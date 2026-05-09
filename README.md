@@ -204,11 +204,11 @@ frontend/index.html
 
 固件位于：
 
-- [firmware/esp32_ir_bridge/esp32_ir_bridge.ino](/E:/Project/smart-home-ai/firmware/esp32_ir_bridge/esp32_ir_bridge.ino)
+- [firmware/esp32_ir_bridge/esp32_ir_bridge.ino](firmware/esp32_ir_bridge/esp32_ir_bridge.ino)
 
 固件说明位于：
 
-- [firmware/README.md](/E:/Project/smart-home-ai/firmware/README.md)
+- [firmware/README.md](firmware/README.md)
 
 当前固件提供的核心接口：
 
@@ -316,9 +316,9 @@ smart-home-ai/
 
 ## 文档
 
-- [API 文档](/E:/Project/smart-home-ai/docs/API.md)
-- [团队开发规范](/E:/Project/smart-home-ai/docs/TEAM_DEVELOPMENT_GUIDE.md)
-- [V3 硬件记录](/E:/Project/smart-home-ai/docs/V3_HARDWARE_NOTES.md)
+- [API 文档](docs/API.md)
+- [团队开发规范](docs/TEAM_DEVELOPMENT_GUIDE.md)
+- [V3 硬件记录](docs/V3_HARDWARE_NOTES.md)
 
 ## License
 
