@@ -1,99 +1,148 @@
-// 设备执行模块
-// 负责执行设备动作，返回执行结果
-
 const { getDevice, updateDevice } = require('./devices');
+const { isEsp32Configured, sendIrCommand } = require('./esp32Client');
 
-/**
- * 执行设备动作
- * @param {string} deviceId - 设备ID
- * @param {string} command - 命令（turn_on, turn_off, set_temperature）
- * @param {number} [value] - 参数化动作的值，例如空调目标温度
- * @returns {Object} 执行结果
- */
-function execute(deviceId, command, value) {
-  // 1. 校验设备是否存在
+function getTemperatureCapability(device) {
+  return device.capabilities && device.capabilities.temperature;
+}
+
+function validateValueIfNeeded(device, command, value) {
+  if (command !== 'set_temperature') {
+    return null;
+  }
+
+  const temperatureCapability = getTemperatureCapability(device);
+  const min = temperatureCapability ? temperatureCapability.min : 16;
+  const max = temperatureCapability ? temperatureCapability.max : 30;
+  const step = temperatureCapability ? temperatureCapability.step || 1 : 1;
+
+  if (!Number.isInteger(value) || value < min || value > max || (value - min) % step !== 0) {
+    return `空调温度只能设置为${min}到${max}度之间的整数`;
+  }
+
+  return null;
+}
+
+function getNextStatus(command, currentStatus) {
+  if (command === 'turn_on') {
+    return 'on';
+  }
+
+  if (command === 'turn_off') {
+    return 'off';
+  }
+
+  if (command === 'set_temperature') {
+    return 'on';
+  }
+
+  return currentStatus;
+}
+
+function buildSuccessMessage(device, command, value) {
+  if (command === 'turn_on') {
+    return `${device.name}已打开`;
+  }
+
+  if (command === 'turn_off') {
+    return `${device.name}已关闭`;
+  }
+
+  if (command === 'set_temperature') {
+    return `${device.name}温度已设置为${value}度`;
+  }
+
+  return `${device.name}执行成功`;
+}
+
+function getLearnedCode(device, command) {
+  return device.irProfile && device.irProfile.learnedCodes && device.irProfile.learnedCodes[command];
+}
+
+async function execute(deviceId, command, value) {
   const device = getDevice(deviceId);
   if (!device) {
     return {
       success: false,
-      message: "设备不存在"
+      message: '设备不存在'
     };
   }
 
-  // 2. 校验命令是否支持
   if (!device.actions.includes(command)) {
     return {
       success: false,
-      message: "设备不支持该动作"
+      message: '设备不支持该动作'
     };
   }
 
-  // 3. 执行命令
-  let newStatus = device.status;
-  let updates = {
+  const valueError = validateValueIfNeeded(device, command, value);
+  if (valueError) {
+    return {
+      success: false,
+      message: valueError
+    };
+  }
+
+  if (device.controlType === 'ir') {
+    const learnedCode = getLearnedCode(device, command);
+    if (!learnedCode) {
+      return {
+        success: false,
+        message: `${device.name} 还没有录入 ${command} 的红外码`
+      };
+    }
+
+    if (!isEsp32Configured()) {
+      return {
+        success: false,
+        message: 'ESP32 红外网关未配置，请设置 ESP32_BASE_URL'
+      };
+    }
+
+    try {
+      await sendIrCommand(learnedCode);
+    } catch (error) {
+      return {
+        success: false,
+        message: `ESP32 执行失败：${error.message}`
+      };
+    }
+  }
+
+  const nextStatus = getNextStatus(command, device.status);
+  const updates = {
     lastCommand: {
       command,
       value: value === undefined ? null : value,
-      source: "virtual_executor",
+      source: device.controlType === 'ir' ? 'esp32_ir_bridge' : 'virtual_executor',
       executedAt: new Date().toISOString()
     },
-    stateConfidence: device.controlType === "ir" ? "assumed" : "reported"
+    stateConfidence: device.controlType === 'ir' ? 'assumed' : 'reported'
   };
-  let message = "";
 
-  switch (command) {
-    case "turn_on":
-      newStatus = "on";
-      message = `${device.name}已打开`;
-      break;
-    case "turn_off":
-      newStatus = "off";
-      message = `${device.name}已关闭`;
-      break;
-    case "set_temperature":
-      const temperatureCapability = device.capabilities && device.capabilities.temperature;
-      const min = temperatureCapability ? temperatureCapability.min : 16;
-      const max = temperatureCapability ? temperatureCapability.max : 30;
-      const step = temperatureCapability ? temperatureCapability.step || 1 : 1;
-
-      if (!Number.isInteger(value) || value < min || value > max || (value - min) % step !== 0) {
-        return {
-          success: false,
-          message: `空调温度只能设置为${min}到${max}度之间的整数`
-        };
-      }
-      newStatus = "on";
-      updates.targetTemperature = value;
-      message = `${device.name}温度已设置为${value}度`;
-      break;
-    default:
-      return {
-        success: false,
-        message: "未知的命令"
-      };
+  if (command === 'set_temperature') {
+    updates.targetTemperature = value;
   }
 
-  // 4. 更新设备状态
   const updated = updateDevice(deviceId, {
-    status: newStatus,
-    assumedState: newStatus,
+    status: nextStatus,
+    assumedState: nextStatus,
     ...updates
   });
+
   if (!updated) {
     return {
       success: false,
-      message: "状态更新失败"
+      message: '状态更新失败'
     };
   }
 
-  // 5. 返回成功结果
   return {
     success: true,
-    message: message,
-    deviceId: deviceId,
-    status: newStatus,
-    assumedState: newStatus,
-    targetTemperature: command === "set_temperature" ? value : device.targetTemperature,
+    message: buildSuccessMessage(device, command, value),
+    deviceId,
+    status: nextStatus,
+    assumedState: nextStatus,
+    targetTemperature: command === 'set_temperature' ? value : device.targetTemperature,
     stateConfidence: updates.stateConfidence
   };
 }

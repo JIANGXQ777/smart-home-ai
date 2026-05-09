@@ -9,13 +9,15 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div>
+      <div class="brand-block">
         <p class="eyebrow">Smart Home AI</p>
-        <h1>智能家居 AI 控制台</h1>
+        <h1>旧家电智能化控制台</h1>
+        <p class="topbar-copy">AI 决策、红外执行、硬件状态与传感器数据在同一界面联动展示。</p>
       </div>
       <div class="topbar-actions">
-        <span class="mode-badge">V2 AI 决策</span>
-        <span class="connection-pill offline" id="connection-status">正在连接</span>
+        <span class="status-pill warn" id="ai-status">AI 状态未知</span>
+        <span class="status-pill offline" id="connection-status">后端未连接</span>
+        <span class="status-pill warn" id="hardware-status">硬件状态未知</span>
       </div>
     </header>
 
@@ -24,11 +26,17 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Environment</p>
-            <h2 id="env-title">当前环境</h2>
+            <h2 id="env-title">实时环境</h2>
           </div>
+          <span class="panel-note" id="refresh-text">等待刷新</span>
         </div>
+
         <div class="env-info" id="env-info">
           <div class="empty-state">正在加载环境数据</div>
+        </div>
+
+        <div class="system-status" id="system-status">
+          <div class="empty-state">正在加载系统状态</div>
         </div>
       </section>
 
@@ -40,14 +48,29 @@
           </div>
         </div>
 
+        <div class="showcase-strip" id="showcase-strip">
+          <div class="showcase-card">
+            <span class="showcase-label">控制模式</span>
+            <strong class="showcase-value">AI 建议 + 用户确认</strong>
+          </div>
+          <div class="showcase-card">
+            <span class="showcase-label">硬件路径</span>
+            <strong class="showcase-value">Node.js → ESP32 → 红外</strong>
+          </div>
+          <div class="showcase-card">
+            <span class="showcase-label">当前能力</span>
+            <strong class="showcase-value">温湿度 / 开关机 / 状态推测</strong>
+          </div>
+        </div>
+
         <div class="status-message" id="status-message" hidden></div>
 
         <div class="chat-stream" id="chat-stream">
           <div class="welcome-card" id="welcome-card">
-            <div class="welcome-title">今晚可以从这几件事开始</div>
+            <div class="welcome-title">可以从这些演示指令开始</div>
             <div class="quick-prompts" aria-label="快捷输入">
-              <button class="quick-prompt" type="button" data-prompt="睡觉前帮我调舒服一点">睡前舒适</button>
-              <button class="quick-prompt" type="button" data-prompt="客厅太暗了">客厅太暗</button>
+              <button class="quick-prompt" type="button" data-prompt="只打开空调">只打开空调</button>
+              <button class="quick-prompt" type="button" data-prompt="关闭空调">关闭空调</button>
               <button class="quick-prompt" type="button" data-prompt="你能控制什么">设备能力</button>
             </div>
           </div>
@@ -72,11 +95,7 @@
         </div>
 
         <div class="input-area">
-          <input
-            type="text"
-            id="user-input"
-            autocomplete="off"
-          >
+          <input type="text" id="user-input" autocomplete="off">
           <button id="send-btn" class="primary-button" type="button">发送</button>
         </div>
       </section>
@@ -89,8 +108,9 @@
           </div>
           <span class="device-count" id="device-count">0 台</span>
         </div>
+
         <div class="devices-list" id="devices-list">
-          <div class="empty-state">正在加载设备</div>
+          <div class="empty-state">正在加载设备数据</div>
         </div>
       </section>
     </main>

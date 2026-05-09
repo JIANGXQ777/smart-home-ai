@@ -30,7 +30,20 @@ const devices = [
     irProfile: {
       brand: "unknown",
       model: "unknown",
-      learnedCodes: {}
+      learnedCodes: {
+        turn_on: {
+          protocol: "COOLIX",
+          code: "0xB21FB8",
+          bits: 24,
+          endpoint: "/ir/power"
+        },
+        turn_off: {
+          protocol: "COOLIX",
+          code: "0xB21FB8",
+          bits: 24,
+          endpoint: "/ir/power"
+        }
+      }
     }
   },
   {
@@ -82,9 +95,7 @@ const devices = [
 const environment = {
   temperature: 29,    // 温度
   humidity: 72,       // 湿度
-  time: "22:30",      // 当前时间
-  presence: true,     // 是否有人
-  scene: "bedroom"    // 当前场景
+  time: "22:30"       // 当前时间
 };
 
 // 获取所有设备

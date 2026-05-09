@@ -1,7 +1,5 @@
-// 前端逻辑脚本
-// 实现：获取状态 -> 发送对话 -> 显示回复 -> 确认执行 -> 刷新状态
-
 const API_BASE = 'http://localhost:5000';
+const STATE_REFRESH_MS = 5000;
 
 let pendingAction = null;
 
@@ -20,18 +18,18 @@ const commandTextMap = {
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   loadState();
+  window.setInterval(loadState, STATE_REFRESH_MS);
 });
 
 function setupEventListeners() {
   document.getElementById('send-btn').addEventListener('click', sendMessage);
+  document.getElementById('confirm-btn').addEventListener('click', confirmExecute);
 
-  document.getElementById('user-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+  document.getElementById('user-input').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
       sendMessage();
     }
   });
-
-  document.getElementById('confirm-btn').addEventListener('click', confirmExecute);
 
   document.querySelectorAll('.quick-prompt').forEach(button => {
     button.addEventListener('click', () => {
@@ -45,48 +43,166 @@ function setupEventListeners() {
 
 async function loadState() {
   try {
-    const res = await fetch(`${API_BASE}/api/state`);
-    if (!res.ok) {
-      throw new Error(`state request failed: ${res.status}`);
+    const response = await fetch(`${API_BASE}/api/state`);
+    if (!response.ok) {
+      throw new Error(`state request failed: ${response.status}`);
     }
 
-    const data = await res.json();
+    const data = await response.json();
     renderEnvironment(data.environment);
     renderDevices(data.devices);
+    renderSystemStatus(data.system);
     setConnectionStatus(true);
     showStatus('');
-  } catch (err) {
-    console.error('加载状态失败:', err);
+  } catch (error) {
+    console.error('加载状态失败:', error);
     setConnectionStatus(false);
     renderEnvironment(null);
     renderDevices([]);
-    showStatus('无法连接到后端服务，请确认服务器已启动。');
+    renderSystemStatus(null);
+    showStatus('无法连接到后端服务，请确认 Node.js 服务已启动。');
   }
 }
 
-function renderEnvironment(env) {
+function renderEnvironment(environment) {
   const container = document.getElementById('env-info');
 
-  if (!env) {
+  if (!environment) {
     container.innerHTML = '<div class="empty-state">暂无环境数据</div>';
     return;
   }
 
+  const sourceNote = environment.source === 'esp32' ? '来自 ESP32 + DHT22' : '当前为模拟值';
+
   container.innerHTML = [
-    createEnvItem('温度', `${env.temperature}°C`),
-    createEnvItem('湿度', `${env.humidity}%`),
-    createEnvItem('时间', env.time),
-    createEnvItem('场景', formatScene(env.scene))
+    createEnvItem('温度', `${formatNumber(environment.temperature)}°C`, sourceNote),
+    createEnvItem('湿度', `${formatNumber(environment.humidity)}%`, sourceNote),
+    createEnvItem('时间', environment.time, '由后端实时刷新')
   ].join('');
 }
 
-function createEnvItem(label, value) {
+function createEnvItem(label, value, note = '') {
   return `
     <div class="env-item">
       <span class="label">${label}</span>
       <span class="value">${value}</span>
+      ${note ? `<span class="note">${note}</span>` : ''}
     </div>
   `;
+}
+
+function renderSystemStatus(system) {
+  const aiStatus = document.getElementById('ai-status');
+  const connectionStatus = document.getElementById('connection-status');
+  const hardwareStatus = document.getElementById('hardware-status');
+  const refreshText = document.getElementById('refresh-text');
+  const systemPanel = document.getElementById('system-status');
+
+  if (!system) {
+    aiStatus.textContent = 'AI 状态未知';
+    aiStatus.className = 'status-pill warn';
+    connectionStatus.textContent = '后端未连接';
+    connectionStatus.className = 'status-pill offline';
+    hardwareStatus.textContent = '硬件状态未知';
+    hardwareStatus.className = 'status-pill warn';
+    refreshText.textContent = '刷新失败';
+    systemPanel.innerHTML = '<div class="empty-state">暂无系统状态</div>';
+    return;
+  }
+
+  aiStatus.textContent = system.aiDecisionEnabled ? 'AI 决策已启用' : 'AI 决策已关闭';
+  aiStatus.className = `status-pill ${system.aiDecisionEnabled ? 'online' : 'warn'}`;
+
+  connectionStatus.textContent = system.backendConnected ? '后端已连接' : '后端未连接';
+  connectionStatus.className = `status-pill ${system.backendConnected ? 'online' : 'offline'}`;
+
+  if (!system.esp32Configured) {
+    hardwareStatus.textContent = '硬件未配置';
+    hardwareStatus.className = 'status-pill warn';
+  } else if (system.esp32Connected) {
+    hardwareStatus.textContent = 'ESP32 在线';
+    hardwareStatus.className = 'status-pill online';
+  } else {
+    hardwareStatus.textContent = 'ESP32 离线';
+    hardwareStatus.className = 'status-pill offline';
+  }
+
+  refreshText.textContent = `最近刷新：${formatRefreshTime(system.refreshedAt)}`;
+
+  systemPanel.innerHTML = [
+    createSystemItem('AI 决策', system.aiDecisionEnabled ? '已启用' : '未启用'),
+    createSystemItem('后端连接', system.backendConnected ? '正常' : '异常'),
+    createSystemItem('ESP32 网关', formatEsp32Status(system)),
+    createSystemItem('硬件细节', formatHardwareDetails(system)),
+    createSystemItem('最近刷新', formatRefreshTime(system.refreshedAt))
+  ].join('');
+}
+
+function createSystemItem(label, value) {
+  return `
+    <div class="system-item">
+      <span class="label">${label}</span>
+      <span class="value">${value}</span>
+    </div>
+  `;
+}
+
+function formatEsp32Status(system) {
+  if (!system.esp32Configured) {
+    return '未配置';
+  }
+
+  if (!system.esp32Connected) {
+    return '离线';
+  }
+
+  const parts = ['在线'];
+
+  if (system.esp32 && typeof system.esp32.rssi === 'number') {
+    parts.push(`RSSI ${system.esp32.rssi}`);
+  }
+
+  if (system.esp32 && system.esp32.ip) {
+    parts.push(system.esp32.ip);
+  }
+
+  return parts.join(' · ');
+}
+
+function formatHardwareDetails(system) {
+  if (!system.esp32Configured) {
+    return '未启用硬件桥接';
+  }
+
+  if (!system.esp32Connected || !system.esp32) {
+    return '未获取到硬件健康状态';
+  }
+
+  const details = [];
+
+  if (system.esp32.serviceStarted === true) {
+    details.push('IR API 已启动');
+  }
+
+  if (system.esp32.sensorReady === true) {
+    details.push('传感器就绪');
+  }
+
+  if (system.esp32.wifiConnected === true) {
+    details.push('Wi-Fi 正常');
+  }
+
+  return details.length > 0 ? details.join(' · ') : '已连接';
+}
+
+function formatRefreshTime(isoString) {
+  if (!isoString) {
+    return '--:--:--';
+  }
+
+  return new Date(isoString).toLocaleTimeString('zh-CN', {
+    hour12: false
+  });
 }
 
 function renderDevices(devices) {
@@ -127,7 +243,11 @@ function renderDeviceDetails(device) {
     details.push(`设定温度：${device.targetTemperature} 度`);
   }
 
-  details.push(`可用能力：${formatCapabilities(device)}`);
+  if (device.lastCommand) {
+    details.push(`最近命令：${formatCommand(device.lastCommand.command)}`);
+  }
+
+  details.push(`能力：${formatCapabilities(device)}`);
 
   return details.map(detail => `<span class="device-meta">${detail}</span>`).join('');
 }
@@ -135,8 +255,9 @@ function renderDeviceDetails(device) {
 async function sendMessage() {
   const input = document.getElementById('user-input');
   const message = input.value.trim();
-
-  if (!message) return;
+  if (!message) {
+    return;
+  }
 
   setLoading('chat', true);
   showStatus('');
@@ -146,20 +267,19 @@ async function sendMessage() {
   showThinking();
 
   try {
-    const res = await fetch(`${API_BASE}/api/chat`, {
+    const response = await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message })
     });
 
-    if (!res.ok) {
-      throw new Error(`chat request failed: ${res.status}`);
+    if (!response.ok) {
+      throw new Error(`chat request failed: ${response.status}`);
     }
 
-    const data = await res.json();
+    const data = await response.json();
     setConnectionStatus(true);
-    const reply = data.reply || '我暂时没有可展示的回复。';
-    appendMessage('assistant', reply);
+    appendMessage('assistant', data.reply || '我暂时没有可展示的回复。');
 
     if (data.needConfirm && data.action) {
       pendingAction = data.action;
@@ -171,8 +291,8 @@ async function sendMessage() {
     }
 
     input.value = '';
-  } catch (err) {
-    console.error('发送消息失败:', err);
+  } catch (error) {
+    console.error('发送消息失败:', error);
     setConnectionStatus(false);
     hideReplyArea();
     appendMessage('assistant', '抱歉，AI 助手暂时无法响应。');
@@ -183,23 +303,12 @@ async function sendMessage() {
   }
 }
 
-function showReply(text, label = '当前建议') {
-  const replyArea = document.getElementById('reply-area');
-  const replyText = document.getElementById('reply-text');
-  const replyLabel = replyArea.querySelector('.reply-label');
-
-  replyArea.classList.remove('thinking');
-  replyLabel.textContent = label;
-  replyText.textContent = text;
-  replyArea.hidden = false;
-}
-
 function showThinking() {
   const replyArea = document.getElementById('reply-area');
   const replyText = document.getElementById('reply-text');
 
   replyArea.classList.add('thinking');
-  replyText.textContent = 'AI 正在结合环境和设备状态生成建议...';
+  replyText.textContent = 'AI 正在结合环境与设备状态生成建议';
   replyArea.hidden = false;
 }
 
@@ -233,10 +342,7 @@ function showActionSuggestion(action) {
   const suggestionText = document.getElementById('suggestion-text');
   const confirmBtn = document.getElementById('confirm-btn');
 
-  const deviceName = formatDeviceName(action.deviceId);
-  const actionText = formatAction(action);
-
-  suggestionText.textContent = `${deviceName} · ${actionText}`;
+  suggestionText.textContent = `${formatDeviceName(action.deviceId)} · ${formatAction(action)}`;
   actionDiv.hidden = false;
   confirmBtn.hidden = false;
 }
@@ -247,7 +353,9 @@ function hideActionSuggestion() {
 }
 
 async function confirmExecute() {
-  if (!pendingAction) return;
+  if (!pendingAction) {
+    return;
+  }
 
   const { deviceId, command, value } = pendingAction;
 
@@ -255,24 +363,24 @@ async function confirmExecute() {
   showStatus('');
 
   try {
-    const res = await fetch(`${API_BASE}/api/execute`, {
+    const response = await fetch(`${API_BASE}/api/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId, command, value })
     });
 
-    if (!res.ok) {
-      throw new Error(`execute request failed: ${res.status}`);
+    if (!response.ok) {
+      throw new Error(`execute request failed: ${response.status}`);
     }
 
-    const data = await res.json();
+    const data = await response.json();
     setConnectionStatus(true);
     showExecuteResult(data);
     pendingAction = null;
     hideActionSuggestion();
     await loadState();
-  } catch (err) {
-    console.error('执行失败:', err);
+  } catch (error) {
+    console.error('执行失败:', error);
     setConnectionStatus(false);
     showExecuteResult({ success: false, message: '执行失败，请稍后重试。' });
   } finally {
@@ -303,23 +411,19 @@ function setLoading(type, loading) {
   confirmBtn.disabled = loading;
   input.disabled = loading;
 
-  if (loading && type === 'chat') {
-    sendBtn.textContent = '发送中';
-  } else {
-    sendBtn.textContent = '发送';
-  }
-
-  if (loading && type === 'execute') {
-    confirmBtn.textContent = '执行中';
-  } else {
-    confirmBtn.textContent = '确认执行';
-  }
+  sendBtn.textContent = loading && type === 'chat' ? '发送中' : '发送';
+  confirmBtn.textContent = loading && type === 'execute' ? '执行中' : '确认执行';
 }
 
 function setConnectionStatus(online) {
   const status = document.getElementById('connection-status');
+  if (!status) {
+    return;
+  }
+
   status.classList.toggle('online', online);
   status.classList.toggle('offline', !online);
+  status.classList.remove('warn');
   status.textContent = online ? '后端已连接' : '后端未连接';
 }
 
@@ -353,8 +457,7 @@ function formatCapabilities(device) {
   }
 
   if (capabilities.temperature) {
-    const { min, max } = capabilities.temperature;
-    labels.push(`温度 ${min}-${max} 度`);
+    labels.push(`温度 ${capabilities.temperature.min}-${capabilities.temperature.max} 度`);
   }
 
   if (Array.isArray(capabilities.mode) && capabilities.mode.length > 0) {
@@ -365,19 +468,11 @@ function formatCapabilities(device) {
     labels.push('风速');
   }
 
-  if (labels.length > 0) {
-    return labels.join(' / ');
-  }
-
-  return device.actions.map(formatCommand).join(' / ');
+  return labels.length > 0 ? labels.join(' / ') : device.actions.map(formatCommand).join(' / ');
 }
 
 function formatControlType(controlType) {
-  const controlTypeMap = {
-    ir: '红外'
-  };
-
-  return controlTypeMap[controlType] || controlType;
+  return controlType === 'ir' ? '红外' : controlType;
 }
 
 function formatStateConfidence(stateConfidence) {
@@ -407,11 +502,10 @@ function formatDeviceType(type) {
   return typeMap[type] || type;
 }
 
-function formatScene(scene) {
-  const sceneMap = {
-    bedroom: '卧室',
-    livingroom: '客厅'
-  };
+function formatNumber(value) {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  }
 
-  return sceneMap[scene] || scene;
+  return '--';
 }

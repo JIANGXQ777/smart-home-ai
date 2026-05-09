@@ -1,20 +1,19 @@
 # Smart Home AI API 文档
 
-本文档描述 Smart Home AI 当前阶段的后端 HTTP API。当前版本为红外旧家电改造的软件原型，设备和环境数据均为内存模拟数据。
+本文档描述 Smart Home AI 当前阶段的后端 HTTP API。
 
 ## 基础信息
 
 - 服务地址：`http://localhost:5000`
-- 数据格式：JSON
+- 数据格式：`JSON`
 - 请求头：`Content-Type: application/json`
-- 跨域：后端当前允许所有来源访问
 
 ## 接口总览
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/state` | 获取当前环境信息和设备列表 |
-| POST | `/api/chat` | 提交用户自然语言输入，获取 AI 建议 |
+| GET | `/api/state` | 获取当前环境、设备与系统状态 |
+| POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和建议动作 |
 | POST | `/api/execute` | 用户确认后执行设备动作 |
 
 ## 数据模型
@@ -23,11 +22,21 @@
 
 | 字段 | 类型 | 示例 | 说明 |
 |---|---|---|---|
-| `temperature` | number | `29` | 当前温度，单位摄氏度 |
-| `humidity` | number | `72` | 当前湿度，百分比 |
-| `time` | string | `"22:30"` | 当前模拟时间 |
-| `presence` | boolean | `true` | 当前场景是否有人 |
-| `scene` | string | `"bedroom"` | 当前模拟场景 |
+| `temperature` | number | `22.9` | 当前温度，单位摄氏度 |
+| `humidity` | number | `61.6` | 当前湿度，百分比 |
+| `time` | string | `"16:57"` | 当前时间，由后端实时生成 |
+| `source` | string | `"esp32"` | 环境数据来源，`esp32` 或 `simulated` |
+
+### System
+
+| 字段 | 类型 | 示例 | 说明 |
+|---|---|---|---|
+| `backendConnected` | boolean | `true` | 后端服务是否正常运行 |
+| `aiDecisionEnabled` | boolean | `true` | 是否启用大模型决策 |
+| `esp32Configured` | boolean | `true` | 是否已配置 ESP32 网关地址 |
+| `esp32Connected` | boolean | `true` | 后端能否访问 ESP32 网关 |
+| `refreshedAt` | string | `"2026-05-09T08:57:00.000Z"` | 状态聚合时间 |
+| `esp32` | object 或 null | `{ "ip": "10.173.149.129" }` | ESP32 健康状态摘要 |
 
 ### Device
 
@@ -37,50 +46,28 @@
 | `name` | string | `"卧室空调"` | 设备显示名称 |
 | `type` | string | `"air_conditioner"` | 设备类型 |
 | `location` | string | `"卧室"` | 设备所在位置 |
-| `controlType` | string | `"ir"` | 控制方式，`ir` 表示红外控制设备 |
-| `status` | string | `"off"` | 设备当前状态，取值为 `on` 或 `off` |
-| `assumedState` | string | `"off"` | 系统根据最后一次命令推测出的设备状态 |
-| `targetTemperature` | number 或 null | `26` | 空调当前设定温度，仅空调设备使用 |
-| `lastCommand` | object 或 null | `{ "command": "turn_on" }` | 最后一次执行的命令记录 |
-| `stateConfidence` | string | `"assumed"` | 状态可信度，红外设备通常为系统推测 |
-| `paired` | boolean | `true` | 设备是否已配对 |
-| `actions` | string[] | `["turn_on", "turn_off"]` | 设备支持的动作列表，`set_temperature` 需要同时传入 `value` |
-| `capabilities` | object | `{ "power": true }` | 设备能力模型，用于描述红外家电可控能力 |
-| `irProfile` | object | `{ "brand": "unknown" }` | 红外档案，预留品牌、型号和红外码映射 |
+| `controlType` | string | `"ir"` | 控制方式，当前为红外 |
+| `status` | string | `"off"` | 当前状态，`on` 或 `off` |
+| `assumedState` | string | `"off"` | 系统根据最后命令推测出的状态 |
+| `targetTemperature` | number 或 null | `26` | 空调设定温度 |
+| `lastCommand` | object 或 null | `{ "command": "turn_on" }` | 最后一次执行记录 |
+| `stateConfidence` | string | `"assumed"` | 状态可信度 |
+| `paired` | boolean | `true` | 是否已配对 |
+| `actions` | string[] | `["turn_on", "turn_off"]` | 支持的动作列表 |
+| `capabilities` | object | `{ "power": true }` | 设备能力模型 |
+| `irProfile` | object | `{ "brand": "unknown" }` | 红外档案与已学习红外码 |
 
 ### Action
 
 | 字段 | 类型 | 示例 | 说明 |
 |---|---|---|---|
 | `deviceId` | string | `"bedroom_ac"` | 目标设备 ID |
-| `command` | string | `"turn_on"` | 目标动作命令 |
-| `value` | number | `26` | 可选参数，`set_temperature` 时表示目标温度 |
-
-## 设备与命令枚举
-
-### 当前设备
-
-| 设备 ID | 名称 | 类型 | 位置 | 初始状态 | 支持动作 |
-|---|---|---|---|---|---|
-| `bedroom_ac` | 卧室空调 | `air_conditioner` | 卧室 | `off` | `turn_on`, `turn_off`, `set_temperature` |
-| `livingroom_fan` | 客厅风扇 | `fan` | 客厅 | `off` | `turn_on`, `turn_off` |
-| `livingroom_light` | 客厅灯 | `light` | 客厅 | `off` | `turn_on`, `turn_off` |
-
-### 当前动作
-
-| 命令 | 说明 | 执行后的状态 |
-|---|---|---|
-| `turn_on` | 打开设备 | `on` |
-| `turn_off` | 关闭设备 | `off` |
-| `set_temperature` | 将空调设置为指定温度，`value` 范围为 16 到 30 的整数 | `on` |
+| `command` | string | `"turn_on"` | 目标动作 |
+| `value` | number | `26` | 可选参数，`set_temperature` 时使用 |
 
 ## GET /api/state
 
-获取当前系统状态，包括环境信息和所有已配对设备。
-
-### 请求
-
-无请求体。
+获取当前环境、设备和系统状态。
 
 ### 成功响应
 
@@ -89,11 +76,10 @@
 ```json
 {
   "environment": {
-    "temperature": 29,
-    "humidity": 72,
-    "time": "22:30",
-    "presence": true,
-    "scene": "bedroom"
+    "temperature": 22.9,
+    "humidity": 61.6,
+    "time": "16:57",
+    "source": "esp32"
   },
   "devices": [
     {
@@ -123,28 +109,31 @@
       "irProfile": {
         "brand": "unknown",
         "model": "unknown",
-        "learnedCodes": {}
+        "learnedCodes": {
+          "turn_on": {
+            "protocol": "COOLIX",
+            "code": "0xB21FB8",
+            "bits": 24,
+            "endpoint": "/ir/power"
+          }
+        }
       }
-    },
-    {
-      "id": "livingroom_fan",
-      "name": "客厅风扇",
-      "type": "fan",
-      "location": "客厅",
-      "status": "off",
-      "paired": true,
-      "actions": ["turn_on", "turn_off"]
-    },
-    {
-      "id": "livingroom_light",
-      "name": "客厅灯",
-      "type": "light",
-      "location": "客厅",
-      "status": "off",
-      "paired": true,
-      "actions": ["turn_on", "turn_off"]
     }
-  ]
+  ],
+  "system": {
+    "backendConnected": true,
+    "aiDecisionEnabled": true,
+    "esp32Configured": true,
+    "esp32Connected": true,
+    "refreshedAt": "2026-05-09T08:57:00.000Z",
+    "esp32": {
+      "ip": "10.173.149.129",
+      "rssi": -13,
+      "serviceStarted": true,
+      "sensorReady": true,
+      "wifiConnected": true
+    }
+  }
 }
 ```
 
@@ -156,7 +145,7 @@ curl http://localhost:5000/api/state
 
 ## POST /api/chat
 
-提交用户自然语言输入，由后端规则版 AI 返回回复和建议动作。AI 只生成建议，不直接执行设备控制。
+提交自然语言输入，由后端返回 AI 回复和建议动作。AI 只生成建议，不直接执行设备控制。
 
 ### 请求体
 
@@ -166,18 +155,18 @@ curl http://localhost:5000/api/state
 
 ```json
 {
-  "message": "好热"
+  "message": "只打开空调"
 }
 ```
 
-### 成功响应：需要用户确认
+### 成功响应
 
 状态码：`200`
 
 ```json
 {
-  "reply": "当前室温29度，卧室空调处于关闭状态，建议打开卧室空调，需要我帮你打开吗？",
-  "intent": "cooling",
+  "reply": "好的，我可以帮你只打开卧室空调，不调整温度，需要我现在执行吗？",
+  "intent": "direct_control",
   "needConfirm": true,
   "action": {
     "deviceId": "bedroom_ac",
@@ -186,33 +175,7 @@ curl http://localhost:5000/api/state
 }
 ```
 
-### 成功响应：不需要控制设备
-
-状态码：`200`
-
-```json
-{
-  "reply": "我目前可以控制卧室空调、客厅风扇和客厅灯。卧室空调支持开关和设置温度，客厅风扇支持开关，客厅灯支持开关。",
-  "intent": "capability_query",
-  "needConfirm": false,
-  "action": null
-}
-```
-
-### 成功响应：无法理解
-
-状态码：`200`
-
-```json
-{
-  "reply": "我目前可以控制卧室空调、客厅风扇和客厅灯。你可以试试说'好热'、'好冷'、'打开空调'等。",
-  "intent": "unknown",
-  "needConfirm": false,
-  "action": null
-}
-```
-
-### 错误响应：缺少 message
+### 错误响应
 
 状态码：`400`
 
@@ -222,55 +185,17 @@ curl http://localhost:5000/api/state
 }
 ```
 
-### 返回字段说明
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `reply` | string | 返回给用户展示的自然语言回复 |
-| `intent` | string | 识别出的用户意图 |
-| `needConfirm` | boolean | 是否需要用户确认执行 |
-| `action` | Action 或 null | 建议动作；没有动作时为 `null` |
-
-### 当前支持的意图
-
-| intent | 说明 |
-|---|---|
-| `cooling` | 降温需求 |
-| `warming` | 偏冷需求 |
-| `capability_query` | 能力查询 |
-| `direct_control` | 明确设备控制指令 |
-| `unknown` | 未识别意图 |
-
-### 当前规则示例
-
-| 用户输入示例 | 条件 | 返回动作 |
-|---|---|---|
-| `好热`、`太热`、`闷` | 温度大于等于 28 度，卧室空调已配对 | `bedroom_ac` / `turn_on` |
-| `好冷`、`太冷` | 卧室空调状态为 `on` | `bedroom_ac` / `turn_off` |
-| `打开空调`、`开空调` | 卧室空调存在 | `bedroom_ac` / `turn_on` |
-| `关闭空调`、`关空调` | 卧室空调状态为 `on` | `bedroom_ac` / `turn_off` |
-| `打开风扇`、`开风扇` | 客厅风扇状态为 `off` | `livingroom_fan` / `turn_on` |
-| `开灯`、`打开灯` | 客厅灯状态为 `off` | `livingroom_light` / `turn_on` |
-| `你能控制什么`、`有哪些设备` | 无 | 返回能力说明，不返回动作 |
-
-### curl 示例
-
-```bash
-curl -X POST http://localhost:5000/api/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"message\":\"好热\"}"
-```
-
 ## POST /api/execute
 
-用户确认后执行设备动作。后端会校验设备是否存在、动作是否被该设备支持，然后更新内存中的设备状态。
+用户确认后执行设备动作。对于已配置红外码的红外设备，后端会调用 ESP32 网关发射红外，再更新推测状态。
 
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `deviceId` | string | 是 | 要控制的设备 ID |
-| `command` | string | 是 | 要执行的动作命令 |
+| `deviceId` | string | 是 | 目标设备 ID |
+| `command` | string | 是 | 要执行的动作 |
+| `value` | number | 否 | `set_temperature` 时的目标温度 |
 
 ```json
 {
@@ -288,51 +213,21 @@ curl -X POST http://localhost:5000/api/chat \
   "success": true,
   "message": "卧室空调已打开",
   "deviceId": "bedroom_ac",
-  "status": "on"
+  "status": "on",
+  "assumedState": "on",
+  "targetTemperature": null,
+  "stateConfidence": "assumed"
 }
 ```
 
-### 错误响应：缺少字段
-
-状态码：`400`
+### 失败响应示例
 
 ```json
 {
   "success": false,
-  "message": "缺少 deviceId 或 command 字段"
+  "message": "卧室空调 还没有录入 set_temperature 的红外码"
 }
 ```
-
-### 错误响应：设备不存在
-
-状态码：`200`
-
-```json
-{
-  "success": false,
-  "message": "设备不存在"
-}
-```
-
-### 错误响应：设备不支持该动作
-
-状态码：`200`
-
-```json
-{
-  "success": false,
-  "message": "设备不支持该动作"
-}
-```
-
-### 返回字段说明
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `success` | boolean | 是否执行成功 |
-| `message` | string | 执行结果说明 |
-| `deviceId` | string | 被控制的设备 ID，成功时返回 |
-| `status` | string | 设备最新状态，成功时返回 |
 
 ### curl 示例
 
@@ -341,31 +236,3 @@ curl -X POST http://localhost:5000/api/execute \
   -H "Content-Type: application/json" \
   -d "{\"deviceId\":\"bedroom_ac\",\"command\":\"turn_on\"}"
 ```
-
-## 前端联调流程
-
-1. 启动后端服务。
-
-```bash
-npm install
-npm start
-```
-
-1. 打开前端页面。
-
-```text
-frontend/index.html
-```
-
-1. 输入 `好热`。
-2. 页面应显示 AI 建议打开卧室空调。
-3. 点击确认执行。
-4. 页面应显示执行成功结果。
-5. 设备列表中卧室空调状态应刷新为 `已开启`。
-
-## V1 限制
-
-- 当前数据保存在 Node.js 进程内存中，服务重启后会恢复初始状态。
-- 当前 AI 决策为关键词规则模拟，不调用真实大模型。
-- 当前设备执行为虚拟执行，不控制真实硬件。
-- 所有设备控制动作都需要用户确认后才执行。

@@ -1,6 +1,3 @@
-// AI 决策模块
-// V2 阶段支持大模型决策，未启用模型时保留 V1 规则模式
-
 require('dotenv').config({ quiet: true });
 
 const { getDevices, getEnvironment } = require('./devices');
@@ -10,7 +7,7 @@ const { decideByRules } = require('./ruleAgent');
 
 function safeNoActionReply() {
   return {
-    reply: "我暂时无法安全判断要执行的设备动作。你可以换一种更明确的说法，例如'打开卧室空调'或'打开客厅灯'。",
+    reply: "我暂时无法安全判断要执行的设备动作。你可以换一种更明确的说法，例如“打开卧室空调”或“打开客厅灯”。",
     intent: "llm_unavailable",
     needConfirm: false,
     action: null
@@ -35,6 +32,10 @@ function unsupportedSpecificActionReply() {
   };
 }
 
+function containsAny(text, keywords) {
+  return keywords.some(keyword => text.includes(keyword));
+}
+
 function parseTemperatureCommand(message) {
   const match = message.match(/(?:空调|温度|设为|设置为|设置|调到|调为|调整为|改成)\D*(\d{2})\s*度?/);
   if (!match) {
@@ -49,13 +50,81 @@ function parseTemperatureCommand(message) {
   return value;
 }
 
+function findBedroomAc(devices) {
+  return devices.find(device => device.id === 'bedroom_ac');
+}
+
+function decideExplicitPowerCommand(message, devices) {
+  const ac = findBedroomAc(devices);
+  if (!ac || !ac.paired) {
+    return null;
+  }
+
+  const asksOpenAc = containsAny(message, ['打开空调', '开空调', '开启空调']);
+  const asksCloseAc = containsAny(message, ['关闭空调', '关空调', '关掉空调']);
+  const asksTemperature = parseTemperatureCommand(message) !== null;
+
+  if (asksTemperature) {
+    return null;
+  }
+
+  if (asksOpenAc) {
+    if (ac.status === 'on') {
+      return {
+        reply: '卧室空调已经处于开启状态，不需要重复打开。',
+        intent: 'already_done',
+        needConfirm: false,
+        action: null
+      };
+    }
+
+    return {
+      reply: '好的，我可以帮你只打开卧室空调，不调整温度，需要我现在执行吗？',
+      intent: 'direct_control',
+      needConfirm: true,
+      action: {
+        deviceId: 'bedroom_ac',
+        command: 'turn_on'
+      }
+    };
+  }
+
+  if (asksCloseAc) {
+    if (ac.status === 'off') {
+      return {
+        reply: '卧室空调已经处于关闭状态，不需要重复关闭。',
+        intent: 'already_done',
+        needConfirm: false,
+        action: null
+      };
+    }
+
+    return {
+      reply: '好的，我可以帮你只关闭卧室空调，需要我现在执行吗？',
+      intent: 'direct_control',
+      needConfirm: true,
+      action: {
+        deviceId: 'bedroom_ac',
+        command: 'turn_off'
+      }
+    };
+  }
+
+  return null;
+}
+
 function decideDirectControl(message, devices) {
+  const explicitPowerDecision = decideExplicitPowerCommand(message, devices);
+  if (explicitPowerDecision) {
+    return explicitPowerDecision;
+  }
+
   const temperature = parseTemperatureCommand(message);
   if (temperature === null) {
     return null;
   }
 
-  const ac = devices.find(device => device.id === 'bedroom_ac');
+  const ac = findBedroomAc(devices);
   if (!ac || !ac.paired || !ac.actions.includes('set_temperature')) {
     return unsupportedSpecificActionReply();
   }
