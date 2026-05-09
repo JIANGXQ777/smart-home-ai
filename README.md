@@ -1,89 +1,145 @@
 # Smart Home AI
 
-面向传统红外家电的 AI 智能化改造系统。项目目标不是让用户更换全套智能家居设备，而是通过 **AI 决策 + 红外控制 + 状态管理**，让旧空调、旧电视、旧风扇、旧投影仪等不支持智能家居协议的设备，也能被自然语言理解、建议和控制。
+用 AI + 红外控制改造旧家电，让传统红外家电获得自然语言控制能力。
 
-![Smart Home AI 控制台预览](docs/images/smart-home-ai-console.png)
+当前项目已经进入 `V3 硬件接入阶段`，主链路已经从“软件模拟执行”升级为“后端调用 ESP32，ESP32 发射真实红外码，旧家电真实响应”。
 
-## 项目目的
+## 项目定位
 
-大量家庭仍在使用传统红外遥控家电。这些设备功能正常，但无法联网、无法接入智能家居平台，也很难被老人、儿童或不熟悉遥控器的人便捷使用。
+大量家庭仍在使用传统红外家电，比如旧空调、旧风扇、旧电视。这些设备功能正常，但无法联网，也无法直接接入现代智能家居平台。
 
-Smart Home AI 希望解决这个问题：
+Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
-```text
-传统红外家电
-→ 红外学习 / 红外发射
-→ 设备能力抽象
-→ AI 理解自然语言和场景
-→ 用户确认
-→ 执行控制
-→ 记录并展示设备状态
-```
+- AI 决策
+- 红外控制
+- 设备能力建模
+- 推测状态管理
 
-项目用于创新比赛展示，核心价值是 **用低成本硬件和 AI 软件能力，为旧家电赋能**。
+让旧家电也能被理解、建议和控制。
 
-## 创新点
+## 当前版本
 
-- **旧家电智能化**：不要求用户购买新智能设备，通过红外模块改造已有家电。
-- **自然语言控制**：用户可以说“我有点热”“睡觉前调舒服一点”，不用记遥控器按钮。
-- **AI 场景决策**：结合温度、湿度、时间、设备状态和设备能力给出建议。
-- **安全确认机制**：AI 只生成建议，涉及设备动作时必须由用户确认后执行。
-- **状态推测模型**：传统红外设备通常不会回传状态，系统通过最后命令和环境信息维护推测状态。
-- **可扩展硬件路线**：后续可接入 ESP32、红外发射/接收模块、温湿度传感器和功率检测模块。
+当前主线进度如下：
 
-## 当前完成度
+- `V1`：文字版软件闭环，规则模拟 AI，虚拟设备控制
+- `V2`：接入大模型决策、后端校验、用户确认执行
+- `V2.1`：前端控制台重设计
+- `V2.2`：红外设备能力模型升级
+- `V3`：ESP32 硬件接入，真实红外执行、实时温湿度、OLED 本地状态面板
 
-当前版本仍是软件原型，暂未接入真实红外硬件，但已经跑通 AI 决策和设备控制闭环。
+## V3 已完成能力
 
-- **V1**：文字版软件闭环，规则模拟 AI，虚拟设备控制。
-- **V2**：接入 OpenAI-compatible 大模型接口，升级为 AI 家居决策助手。
-- **V2.1**：重设计前端页面，升级为智能家居 AI 控制台。
-- **V2.2**：升级红外设备能力模型，记录控制方式、状态可信度、红外档案和最后命令。
+当前已经跑通的能力：
 
-## 当前系统流程
+- Node.js 后端调用 ESP32 HTTP 接口
+- ESP32 发射真实红外码控制旧家电
+- DHT22 温湿度实时读取
+- 控制台实时展示温度、湿度、时间、系统状态
+- OLED 本地显示：
+  - `WiFi`
+  - `IR API`
+  - `温湿度`
+  - `AC 状态`
+- 后端记录：
+  - `assumedState`
+  - `lastCommand`
+  - `stateConfidence`
+
+## 当前硬件
+
+- `ESP32-S3` 开发板：`YD-ESP32-S3`
+- `DHT22 / AM2302` 温湿度模块
+- 红外接收模块
+- 红外发射模块
+- `0.91"` OLED 显示屏，I2C，`SSD1306`
+
+## 当前接线
+
+### DHT22
+
+- `DAT -> GPIO6`
+- `VCC -> 3V3`
+- `GND -> GND`
+
+### IR Receiver
+
+- `OUT -> GPIO5`
+- `VCC -> 3V3`
+- `GND -> GND`
+
+### IR Transmitter
+
+- `DAT -> GPIO4`
+- `VCC -> 5V`
+- `GND -> GND`
+
+### OLED
+
+- `GND -> GND`
+- `VCC -> 3V3`
+- `SCL -> GPIO18`
+- `SDA -> GPIO17`
+
+注意：OLED 这块在当前板子上的正确 I2C 引脚是：
+
+- `SDA = GPIO17`
+- `SCL = GPIO18`
+
+## 已验证红外码
+
+当前已验证成功的空调电源码：
+
+- 协议：`COOLIX`
+- 码值：`0xB21FB8`
+- 位数：`24`
+
+当前空调的 `turn_on` 和 `turn_off` 暂时共用同一条电源切换码，因此系统现在维护的是推测状态，而不是真实回传状态。
+
+## 系统架构
 
 ```text
 用户输入自然语言
-→ 后端读取环境信息和虚拟设备状态
-→ AI 结合设备能力生成回复和建议动作
-→ 后端校验动作是否合法
-→ 前端展示 AI 回复和建议动作
-→ 用户确认执行
-→ 后端更新虚拟设备状态
-→ 前端刷新展示结果
+-> 前端控制台
+-> Node.js 后端
+-> AI 决策 / 规则兜底
+-> 后端校验动作
+-> 用户确认执行
+-> 后端调用 ESP32 HTTP 接口
+-> ESP32 发射红外码
+-> 旧家电响应
+-> 后端更新 assumedState / lastCommand / stateConfidence
 ```
 
-当前执行的是虚拟设备动作。后续硬件阶段会把执行层替换为：
+## 当前控制台能力
 
-```text
-后端执行命令
-→ 红外控制服务
-→ ESP32 / 红外发射模块
-→ 传统家电响应
-```
+网页控制台当前支持：
 
-## 核心能力
+- 实时温度
+- 实时湿度
+- 实时时间
+- AI 决策启用状态
+- 后端连接状态
+- ESP32 在线状态
+- ESP32 RSSI / IP / 硬件状态
+- 已配对设备状态展示
+- 快捷控制入口
 
-- 自然语言理解：支持“好热”“客厅太暗了”“空调温度设置为 25”等表达。
-- 家居知识问答：可以回答空调原理、节能建议等非控制类问题。
-- 环境感知：读取当前温度、湿度、时间、场景。
-- 设备状态理解：知道设备是否开启、当前设定温度和支持动作。
-- 动态调温：空调支持 `set_temperature + value`，温度范围为 16 到 30 度。
-- 红外设备建模：设备包含 `controlType`、`capabilities`、`irProfile`、`assumedState`、`lastCommand` 和 `stateConfidence`。
-- 安全执行：AI 只生成建议，设备动作必须由用户确认后执行。
-- 动作校验：后端校验大模型输出，避免执行不存在设备或不支持动作。
-- 本地兜底：未启用大模型时，仍可使用 V1 规则模式演示。
+## 设备模型
 
-## 技术栈
+当前红外设备模型已经支持：
 
-| 模块 | 技术 |
-|---|---|
-| 前端 | HTML + CSS + JavaScript |
-| 后端 | Node.js + Express |
-| AI | OpenAI-compatible Chat Completions API |
-| 配置 | dotenv |
-| 当前设备层 | 内存中的虚拟设备 |
-| 后续硬件层 | ESP32 + 红外发射/接收模块 |
+- `controlType=ir`
+- `capabilities`
+- `irProfile`
+- `assumedState`
+- `lastCommand`
+- `stateConfidence`
+
+这让系统可以明确区分：
+
+- 真实传感器数据
+- 后端已执行过的命令
+- 基于红外控制推测出的设备状态
 
 ## 快速开始
 
@@ -93,21 +149,21 @@ Smart Home AI 希望解决这个问题：
 npm install
 ```
 
-### 2. 配置大模型
+### 2. 配置环境变量
 
-复制配置模板：
+复制模板：
 
 ```bash
 cp .env.example .env
 ```
 
-Windows PowerShell 可以使用：
+Windows PowerShell：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`：
+按需编辑 `.env`：
 
 ```env
 LLM_ENABLED=true
@@ -115,17 +171,17 @@ LLM_API_KEY=your_api_key
 LLM_BASE_URL=https://your-openai-compatible-base-url/v1
 LLM_MODEL=your-model-name
 LLM_TIMEOUT_MS=15000
+
+ESP32_ENABLED=true
+ESP32_BASE_URL=http://your-esp32-ip
+ESP32_REQUEST_TIMEOUT_MS=5000
 ```
 
-如果暂时没有大模型 Key，可以保持：
+如果暂时不启用大模型，可以设置：
 
 ```env
 LLM_ENABLED=false
 ```
-
-此时系统会使用 V1 规则模式，仍然可以完成基础演示。
-
-> `.env` 已被 `.gitignore` 忽略，不要提交真实 API Key。
 
 ### 3. 启动后端
 
@@ -133,162 +189,140 @@ LLM_ENABLED=false
 npm start
 ```
 
-后端服务地址：
+默认地址：
 
 ```text
 http://localhost:5000
 ```
 
-### 4. 打开前端
+### 4. 打开前端控制台
 
-直接在浏览器中打开：
+直接打开：
 
 ```text
 frontend/index.html
 ```
 
-推荐测试输入：
+## ESP32 固件
 
-```text
-睡觉前帮我调舒服一点
-空调温度设置为25
-客厅太暗了
-空调的原理是什么
-你能控制什么
-```
+固件位于：
 
-## API 接口
+- [firmware/esp32_ir_bridge/esp32_ir_bridge.ino](/E:/Project/smart-home-ai/firmware/esp32_ir_bridge/esp32_ir_bridge.ino)
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/state` | 获取当前环境信息和设备列表 |
-| POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和控制建议 |
-| POST | `/api/execute` | 用户确认后执行设备动作 |
+固件说明位于：
 
-### POST /api/chat 响应示例
+- [firmware/README.md](/E:/Project/smart-home-ai/firmware/README.md)
 
-```json
-{
-  "reply": "当前卧室温度29度，睡前会偏热。我建议把卧室空调设置为25度，需要我帮你设置吗？",
-  "intent": "comfort_sleep",
-  "needConfirm": true,
-  "action": {
-    "deviceId": "bedroom_ac",
-    "command": "set_temperature",
-    "value": 25
-  }
-}
-```
+当前固件提供的核心接口：
 
-### POST /api/execute 请求示例
+- `GET /health`
+- `POST /ir/send`
+- `POST /ir/power`
 
-```json
-{
-  "deviceId": "bedroom_ac",
-  "command": "set_temperature",
-  "value": 25
-}
-```
+## API 概览
 
-## 当前虚拟设备
+### `GET /api/state`
 
-| 设备 ID | 名称 | 控制方式 | 当前模拟能力 |
-|---|---|---|---|
-| `bedroom_ac` | 卧室空调 | 红外 | 开关、温度、模式、风速 |
-| `livingroom_fan` | 客厅风扇 | 红外 | 开关、风速 |
-| `livingroom_light` | 客厅灯 | 红外 | 开关 |
+返回：
 
-这些设备用于模拟未来的红外家电。真实硬件阶段会在 `irProfile.learnedCodes` 中为每个动作绑定对应红外码。
+- `environment`
+- `devices`
+- `system`
+
+其中 `environment` 当前包含：
+
+- `temperature`
+- `humidity`
+- `time`
+- `source`
+
+### `POST /api/chat`
+
+提交自然语言输入，返回：
+
+- AI 回复
+- 是否需要确认
+- 建议执行动作
+
+### `POST /api/execute`
+
+用户确认后执行设备动作。
+
+当前已经支持真实联动：
+
+- `bedroom_ac / turn_on`
+- `bedroom_ac / turn_off`
 
 ## 项目结构
 
 ```text
 smart-home-ai/
 ├── backend/
-│   ├── server.js              # Express 服务和 API 路由
-│   ├── devices.js             # 虚拟设备和环境状态
-│   ├── aiAgent.js             # AI 决策入口
-│   ├── llmClient.js           # OpenAI-compatible 大模型客户端
-│   ├── decisionValidator.js   # 大模型决策校验
-│   ├── ruleAgent.js           # V1 规则模式
-│   └── executor.js            # 虚拟设备动作执行
+│   ├── aiAgent.js
+│   ├── decisionValidator.js
+│   ├── devices.js
+│   ├── esp32Client.js
+│   ├── executor.js
+│   ├── llmClient.js
+│   ├── ruleAgent.js
+│   └── server.js
+├── firmware/
+│   ├── README.md
+│   └── esp32_ir_bridge/
+│       └── esp32_ir_bridge.ino
 ├── frontend/
-│   ├── index.html             # 控制台页面结构
-│   ├── style.css              # 控制台样式
-│   └── app.js                 # 前端交互逻辑
+│   ├── app.js
+│   ├── index.html
+│   └── style.css
 ├── docs/
 │   ├── API.md
 │   ├── TEAM_DEVELOPMENT_GUIDE.md
 │   ├── V1_ACCEPTANCE.md
-│   └── V2_DEVELOPMENT_PLAN.md
+│   ├── V2_DEVELOPMENT_PLAN.md
+│   └── V3_HARDWARE_NOTES.md
 ├── .env.example
 ├── package.json
 └── README.md
 ```
 
-## 大模型决策策略
+## 当前已知边界
 
-V2 的大模型不是只做意图分类，而是作为旧家电智能化助手：
+这套方案已经适合 `V3 验证和展示`，但仍有两个客观限制：
 
-1. 理解用户自然语言。
-2. 判断是知识问答、闲聊，还是设备控制需求。
-3. 结合环境信息、设备状态和设备能力。
-4. 生成自然语言解释。
-5. 输出一个可选的建议动作。
-6. 后端校验动作是否合法。
-7. 前端等待用户确认后再执行。
+### 1. 红外设备通常是单向控制
 
-如果 `LLM_ENABLED=true` 但模型调用失败、超时、返回非 JSON 或返回非法动作，系统会返回安全的无动作提示，不会直接执行任何设备控制。
+系统无法天然获知“用户是否用原遥控器改过状态”，所以当前状态主要是：
 
-## 验收场景
+- 后端已执行命令
+- 结合设备模型维护出的推测状态
 
-| 输入 | 预期 |
-|---|---|
-| `睡觉前帮我调舒服一点` | 结合环境建议调整卧室空调 |
-| `空调温度设置为25` | 生成 `bedroom_ac/set_temperature/25` 建议动作 |
-| `客厅太暗了` | 建议打开客厅灯 |
-| `空调的原理是什么` | 回答家电知识，不要求执行设备动作 |
-| `你能控制什么` | 返回设备能力说明，不需要确认 |
-| `打开不存在的设备` | 不生成非法动作 |
-| 后端未启动 | 前端显示连接异常，不弹出浏览器 alert |
+### 2. 红外码录入仍需继续扩展
 
-## 版本路线
+当前已经跑通：
 
-| 版本 | 内容 |
-|---|---|
-| V1 | 文字版 Demo，规则模拟 AI，虚拟设备，完成软件闭环 |
-| V2 | 接入 OpenAI-compatible 大模型，增加决策校验和安全无动作返回 |
-| V2.1 | 重设计前端控制台，增加连接状态、快捷入口、对话气泡和响应式布局 |
-| V2.2 | 设备能力模型升级，区分虚拟动作、红外动作、参数范围和状态可信度 |
-| V3 | 接入 ESP32 + 红外发射/接收模块，支持红外学习和真实家电控制 |
-| V4 | 场景自动化、状态推测、用户偏好和主动提醒 |
+- 空调开关机
 
-## 后续硬件规划
+后续建议继续补：
 
-最小硬件 Demo 建议：
+- `set_temperature`
+- `mode`
+- `fanSpeed`
 
-```text
-ESP32
-红外发射模块
-红外接收 / 学习模块
-温湿度传感器
-一个可红外控制的旧空调、旧风扇或旧电视
-```
+## 下一步建议
 
-硬件接入后，系统需要进一步处理红外设备的单向控制问题：
+最值得继续推进的方向：
 
-- `assumedState`：系统根据最后一次命令推测出的设备状态。
-- `lastCommand`：最后一次发送的红外命令。
-- `confidence`：当前状态可信度。
-- `sensorEvidence`：温湿度、电流或用户反馈等辅助证据。
+1. 录入空调调温红外码，打通 `set_temperature`
+2. 录入模式和风速控制
+3. 做红外学习流程，减少手工录码成本
+4. 进一步增强状态可信度模型
 
 ## 文档
 
-- [API 文档](docs/API.md)
-- [团队开发规范](docs/TEAM_DEVELOPMENT_GUIDE.md)
-- [V1 验收记录](docs/V1_ACCEPTANCE.md)
-- [V2 开发说明](docs/V2_DEVELOPMENT_PLAN.md)
+- [API 文档](/E:/Project/smart-home-ai/docs/API.md)
+- [团队开发规范](/E:/Project/smart-home-ai/docs/TEAM_DEVELOPMENT_GUIDE.md)
+- [V3 硬件记录](/E:/Project/smart-home-ai/docs/V3_HARDWARE_NOTES.md)
 
-## 许可证
+## License
 
 MIT
