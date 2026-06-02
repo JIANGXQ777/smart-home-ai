@@ -33,7 +33,7 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
 当前已经跑通的能力：
 
-- Node.js 后端调用 ESP32 HTTP 接口
+- Node.js 后端通过 USB 串口调用 ESP32
 - ESP32 发射真实红外码控制旧家电
 - DHT22 温湿度实时读取
 - 控制台实时展示温度、湿度、时间、系统状态
@@ -101,7 +101,7 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 -> AI 决策 / 规则兜底
 -> 后端校验动作
 -> 用户确认执行
--> 后端调用 ESP32 HTTP 接口
+-> 后端通过串口/网络调用 ESP32
 -> ESP32 发射红外码
 -> 旧家电响应
 -> 后端更新 assumedState / lastCommand / stateConfidence
@@ -170,8 +170,8 @@ LLM_MODEL=your-model-name
 LLM_TIMEOUT_MS=15000
 
 ESP32_ENABLED=true
-ESP32_BASE_URL=http://your-esp32-ip
-ESP32_REQUEST_TIMEOUT_MS=5000
+SERIAL_PORT=COM3
+SERIAL_BAUD_RATE=115200
 ```
 
 如果暂时不启用大模型，可以设置：
@@ -200,6 +200,27 @@ http://localhost:5000
 frontend/index.html
 ```
 
+### 5. Windows 一键启动
+
+如果你想一键启动后端并自动打开前端，可以直接：
+
+```text
+双击 start-smart-home-ai.bat
+```
+
+或者在终端里执行：
+
+```bash
+npm run launch
+```
+
+这个脚本会：
+
+- 检查后端是否已经运行
+- 如果没有运行，就自动启动 `npm start`
+- 等待后端就绪
+- 自动打开 `frontend/index.html`
+
 ## ESP32 固件
 
 固件位于：
@@ -215,6 +236,13 @@ frontend/index.html
 - `GET /health`
 - `POST /ir/send`
 - `POST /ir/power`
+
+当前推荐的连接方式是：
+
+- 后端通过 USB 串口直连 ESP32
+- 后续可通过 WebSocket 升级为局域网/云连接
+
+这意味着演示时 USB 线连接即可通信，稳定可靠。线上部署时只需更换通信模块。
 
 ## API 概览
 

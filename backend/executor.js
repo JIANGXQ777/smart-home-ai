@@ -94,7 +94,7 @@ async function execute(deviceId, command, value) {
     if (!isEsp32Configured()) {
       return {
         success: false,
-        message: 'ESP32 红外网关未配置，请设置 ESP32_BASE_URL'
+        message: 'ESP32 未配置，请确认 SERIAL_PORT'
       };
     }
 

@@ -1,105 +1,95 @@
 # ESP32 Firmware
 
-这个目录用于放 Smart Home AI 的硬件侧固件。
+这个目录用于存放 Smart Home AI 的硬件侧固件。
 
 ## 当前固件
 
 - `esp32_ir_bridge/esp32_ir_bridge.ino`
 
-这是 V3 最小验证版固件，目标只有两个：
+这是串口版固件，负责：
 
-1. 让 ESP32-S3 连上 Wi-Fi
-2. 让后端可以通过 HTTP 触发空调电源红外码
+1. 通过 USB 串口接收 Node.js 后端的命令
+2. 发射已验证的红外码
+3. 读取 DHT22 温湿度
+4. 定期通过串口上报传感器数据
+5. 在 OLED 上显示本地状态面板
 
-当前版本额外支持：
+## 通信协议
 
-- 0.91 寸 SSD1306 I2C OLED 状态面板
-- DHT22 温湿度显示
-- 空调推测状态显示
+采用 JSON 行协议，每行一个 JSON 对象，以 `\n` 结尾。
 
-## 已支持接口
+### 后端 → ESP32
 
-- `GET /health`
-- `POST /ir/send`
-- `POST /ir/power`
+| 命令 | 格式 | 说明 |
+|------|------|------|
+| 查询健康 | `{"cmd":"health"}` | 获取温湿度、系统状态 |
+| 发射红外 | `{"cmd":"ir_send","protocol":"COOLIX","code":"0xB21FB8","bits":24}` | 发射红外码 |
 
-当前只支持一个已验证的红外码：
+### ESP32 → 后端
+
+| 消息 | 格式 | 说明 |
+|------|------|------|
+| 健康上报 | `{"type":"health","temperature":25.5,"humidity":60,"sensorReady":true,"acAssumedOn":false}` | 定期自动上报 + 回复 health 命令 |
+| 命令响应 | `{"type":"response","success":true,"message":"..."}` | 命令执行结果 |
+
+## 当前已验证红外码
 
 - protocol: `COOLIX`
 - code: `0xB21FB8`
 - bits: `24`
 
-## 额外依赖库
-
-除了你已安装的库，还需要：
+## 依赖库
 
 - `Adafruit GFX Library`
 - `Adafruit SSD1306`
+- `DHT sensor library`
+- `IRremoteESP8266`
 
-## OLED 接线
+## 接线
 
-固件默认使用这些引脚：
+### DHT22
 
-- `OLED GND` -> `GND`
-- `OLED VCC` -> `3V3`
-- `OLED SCL` -> `GPIO18`
-- `OLED SDA` -> `GPIO17`
+- `DAT -> GPIO6`
+- `VCC -> 3V3`
+- `GND -> GND`
 
-如果你想换脚位，可以改 `esp32_ir_bridge.ino` 里的：
+### IR Receiver
 
-- `OLED_SCL_PIN`
-- `OLED_SDA_PIN`
+- `OUT -> GPIO5`
+- `VCC -> 3V3`
+- `GND -> GND`
 
-## 屏幕显示
+### IR Transmitter
 
-因为 128x32 屏幕比较小，当前采用固定四行面板，不做滚动：
+- `DAT -> GPIO4`
+- `VCC -> 5V`
+- `GND -> GND`
 
-1. `WiFi: OK/LOST`
-2. `IR API: ON/BOOT`
+### OLED
+
+- `OLED GND -> GND`
+- `OLED VCC -> 3V3`
+- `OLED SCL -> GPIO18`
+- `OLED SDA -> GPIO17`
+
+## OLED 显示内容
+
+当前采用固定四行面板：
+
+1. `Serial: OK/NO`
+2. `Sensor: OK/NO`
 3. `T:22.2C H:56%`
 4. `AC: ON/OFF`
 
-在这些事件发生时，屏幕会短暂显示提示：
-
-- 启动中
-- Wi-Fi 连接中 / 已连接 / 失败 / 重连中
-- 红外服务已启动
-- 红外发送成功
-- 请求参数错误
-
 ## 使用方式
 
-1. 在 `esp32_ir_bridge.ino` 中填入你的 Wi-Fi 名称和密码。
+1. 打开 `esp32_ir_bridge.ino`
 2. Arduino IDE 选择：
    - Board: `ESP32S3 Dev Module`
-   - Port: `COM3`
-3. 编译并烧录。
-4. 打开串口监视器，波特率 `115200`。
-5. 记下串口打印的局域网 IP。
+   - Port: `COM3`（选择实际串口）
+3. 编译并烧录
+4. 打开串口监视器，波特率 `115200`
 
-## 测试
+## 后续升级
 
-健康检查：
-
-```bash
-curl http://ESP32_IP/health
-```
-
-发射电源码：
-
-```bash
-curl -X POST http://ESP32_IP/ir/power
-```
-
-或者：
-
-```bash
-curl -X POST http://ESP32_IP/ir/send \
-  -H "Content-Type: application/json" \
-  -d "{\"protocol\":\"COOLIX\",\"code\":\"0xB21FB8\",\"bits\":24}"
-```
-
-## 说明
-
-这是 V3 最小固件，不负责 AI、状态管理或设备编排。
-这些逻辑仍然由电脑上的 Node.js 后端负责。
+当前为串口版本，后续上云时固件只需添加 WebSocket 客户端，现有串口协议可直接复用。

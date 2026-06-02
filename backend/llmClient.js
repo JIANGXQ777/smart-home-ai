@@ -7,7 +7,8 @@ function getConfig() {
     apiKey: process.env.LLM_API_KEY,
     baseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
     model: process.env.LLM_MODEL || 'gpt-4o-mini',
-    timeoutMs: Number(process.env.LLM_TIMEOUT_MS || 15000)
+    timeoutMs: Number(process.env.LLM_TIMEOUT_MS || 15000),
+    maxCompletionTokens: Number(process.env.LLM_MAX_COMPLETION_TOKENS || 1024)
   };
 }
 
@@ -118,12 +119,15 @@ async function callLlmDecision({ message, environment, devices }) {
     const response = await fetch(buildEndpoint(config.baseUrl), {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
+        'api-key': config.apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: config.model,
         temperature: 0.2,
+        max_completion_tokens: Number.isFinite(config.maxCompletionTokens) && config.maxCompletionTokens > 0
+          ? config.maxCompletionTokens
+          : 1024,
         messages: [
           {
             role: 'system',
