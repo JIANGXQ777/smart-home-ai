@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>模型配置 - Smart Home AI</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .config-page {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+
+    .config-page h2 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .config-page .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .config-section {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .config-section h3 {
+      font-size: 18px;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .form-group {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 12px 20px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      text-align: right;
+    }
+
+    .form-group input,
+    .form-group select {
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: #fafafa;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #0f6b67;
+      box-shadow: 0 0 0 3px rgba(15, 107, 103, 0.1);
+      background: #fff;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .toggle-row label {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .toggle {
+      position: relative;
+      width: 48px;
+      height: 26px;
+      cursor: pointer;
+    }
+
+    .toggle input {
+      display: none;
+    }
+
+    .toggle .slider {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #ccc;
+      border-radius: 26px;
+      transition: 0.3s;
+    }
+
+    .toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+
+    .toggle input:checked + .slider {
+      background: #0f6b67;
+    }
+
+    .toggle input:checked + .slider::before {
+      transform: translateX(22px);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 12px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-save {
+      background: #0f6b67;
+      color: #fff;
+    }
+
+    .btn-reset {
+      background: #eee;
+      color: #333;
+    }
+
+    .btn-back {
+      background: #eee;
+      color: #333;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .msg {
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .msg.success {
+      background: #e5f6ee;
+      color: #2a865e;
+      display: block;
+    }
+
+    .msg.error {
+      background: #fdecec;
+      color: #bc4141;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="config-page">
+    <h2>后端模型配置</h2>
+    <p class="subtitle">修改后点击保存即可写入配置，重启后端生效</p>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="config-section">
+      <h3>LLM 大模型配置</h3>
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="llmEnabled">
+          <span class="slider"></span>
+        </label>
+        <label for="llmEnabled">启用 AI 决策</label>
+      </div>
+      <div class="form-group">
+        <label>模型名称</label>
+        <input type="text" id="llmModel" placeholder="gpt-4o-mini">
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="llmApiKey" placeholder="留空不修改">
+      </div>
+      <div class="form-group">
+        <label>API 地址</label>
+        <input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="form-group">
+        <label>超时时间 (ms)</label>
+        <input type="number" id="llmTimeoutMs" placeholder="15000">
+      </div>
+      <div class="form-group">
+        <label>最大 tokens</label>
+        <input type="number" id="llmMaxTokens" placeholder="1024">
+      </div>
+    </div>
+
+    <div class="config-section">
+      <h3>硬件连接配置</h3>
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="esp32Enabled">
+          <span class="slider"></span>
+        </label>
+        <label for="esp32Enabled">启用 ESP32</label>
+      </div>
+      <div class="form-group">
+        <label>串口号</label>
+        <input type="text" id="serialPort" placeholder="COM3">
+      </div>
+      <div class="form-group">
+        <label>波特率</label>
+        <select id="serialBaudRate">
+          <option value="9600">9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+          <option value="230400">230400</option>
+          <option value="460800">460800</option>
+          <option value="921600">921600</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-save" onclick="saveConfig()">保存配置</button>
+      <button class="btn btn-reset" onclick="loadConfig()">重新加载</button>
+      <a href="/" class="btn btn-back">返回控制台</a>
+    </div>
+  </div>
+
+  <script>
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        document.getElementById('llmEnabled').checked = cfg.llmEnabled;
+        document.getElementById('llmModel').value = cfg.llmModel;
+        document.getElementById('llmBaseUrl').value = cfg.llmBaseUrl;
+        document.getElementById('llmTimeoutMs').value = cfg.llmTimeoutMs;
+        document.getElementById('llmMaxTokens').value = cfg.llmMaxTokens;
+        document.getElementById('esp32Enabled').checked = cfg.esp32Enabled;
+        document.getElementById('serialPort').value = cfg.serialPort;
+        document.getElementById('serialBaudRate').value = String(cfg.serialBaudRate);
+        showMsg('配置已加载', 'success');
+      } catch (e) {
+        showMsg('加载配置失败：' + e.message, 'error');
+      }
+    }
+
+    function saveConfig() {
+      const body = {
+        llmEnabled: document.getElementById('llmEnabled').checked,
+        llmModel: document.getElementById('llmModel').value,
+        llmBaseUrl: document.getElementById('llmBaseUrl').value,
+        llmTimeoutMs: Number(document.getElementById('llmTimeoutMs').value),
+        llmMaxTokens: Number(document.getElementById('llmMaxTokens').value),
+        esp32Enabled: document.getElementById('esp32Enabled').checked,
+        serialPort: document.getElementById('serialPort').value,
+        serialBaudRate: Number(document.getElementById('serialBaudRate').value)
+      };
+
+      const apiKey = document.getElementById('llmApiKey').value.trim();
+      if (apiKey) body.llmApiKey = apiKey;
+
+      fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showMsg('配置已保存，建议重启后端完整生效。', 'success');
+        } else {
+          showMsg('保存失败：' + data.message, 'error');
+        }
+      })
+      .catch(e => showMsg('请求失败：' + e.message, 'error'));
+    }
+
+    function showMsg(text, type) {
+      const msg = document.getElementById('msg');
+      msg.textContent = text;
+      msg.className = 'msg ' + type;
+    }
+
+    loadConfig();
+  </script>
+</body>
+</html>

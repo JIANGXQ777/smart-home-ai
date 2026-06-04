@@ -3,10 +3,12 @@ require('dotenv').config({ quiet: true });
 const express = require('express');
 const path = require('path');
 
+const fs = require('fs');
+
 const { getDevices, getEnvironment } = require('./devices');
 const { decide } = require('./aiAgent');
 const { execute } = require('./executor');
-const { getConfig } = require('./llmClient');
+const { getConfig, checkLlmHealth } = require('./llmClient');
 const { connectSerial } = require('./serialClient');
 const {
   isEsp32Configured,
@@ -45,12 +47,20 @@ function toOptionalBoolean(value) {
   return typeof value === 'boolean' ? value : null;
 }
 
+let llmHealthCache = null;
+
+async function refreshLlmHealth() {
+  llmHealthCache = await checkLlmHealth();
+  console.log('LLM 健康检查:', JSON.stringify(llmHealthCache));
+}
+
 async function buildStateResponse() {
   const baseEnvironment = getEnvironment();
   const llmConfig = getConfig();
   const system = {
     backendConnected: true,
     aiDecisionEnabled: llmConfig.enabled,
+    llmStatus: llmHealthCache,
     esp32Configured: isEsp32Configured(),
     esp32Connected: false,
     refreshedAt: new Date().toISOString(),
@@ -66,7 +76,7 @@ async function buildStateResponse() {
       });
       system.esp32Connected = true;
       system.esp32 = {
-        serialPath: hardware.serialPath || null,
+        serialPath: system.esp32Connection.serialPath || null,
         wifiConnected: toOptionalBoolean(hardware.wifiConnected),
         serviceStarted: toOptionalBoolean(hardware.serviceStarted),
         sensorReady: toOptionalBoolean(hardware.sensorReady),
@@ -147,12 +157,78 @@ app.post('/api/execute', async (req, res) => {
   return res.json(result);
 });
 
-app.listen(5000, () => {
+app.get('/api/config', (req, res) => {
+  res.json({
+    llmEnabled: process.env.LLM_ENABLED === 'true',
+    llmModel: process.env.LLM_MODEL || '',
+    llmBaseUrl: process.env.LLM_BASE_URL || '',
+    llmTimeoutMs: Number(process.env.LLM_TIMEOUT_MS || 15000),
+    llmMaxTokens: Number(process.env.LLM_MAX_COMPLETION_TOKENS || 1024),
+    esp32Enabled: process.env.ESP32_ENABLED !== 'false',
+    serialPort: process.env.SERIAL_PORT || '',
+    serialBaudRate: Number(process.env.SERIAL_BAUD_RATE || 115200)
+  });
+});
+
+app.post('/api/config', async (req, res) => {
+  const body = req.body;
+
+  const lines = [
+    'LLM_ENABLED=' + (body.llmEnabled ?? true),
+    'LLM_API_KEY=' + (body.llmApiKey || process.env.LLM_API_KEY || ''),
+    'LLM_BASE_URL=' + (body.llmBaseUrl || 'https://api.openai.com/v1'),
+    'LLM_MODEL=' + (body.llmModel || 'gpt-4o-mini'),
+    'LLM_TIMEOUT_MS=' + (body.llmTimeoutMs || 15000),
+    'LLM_MAX_COMPLETION_TOKENS=' + (body.llmMaxTokens || 1024),
+    'ESP32_ENABLED=' + (body.esp32Enabled ?? true),
+    'SERIAL_PORT=' + (body.serialPort || ''),
+    'SERIAL_BAUD_RATE=' + (body.serialBaudRate || 115200),
+    'ESP32_REQUEST_TIMEOUT_MS=' + (process.env.ESP32_REQUEST_TIMEOUT_MS || 5000)
+  ];
+
+  try {
+    fs.writeFileSync('.env', lines.join('\n'));
+  } catch (error) {
+    return res.status(500).json({ success: false, message: '写入 .env 失败：' + error.message });
+  }
+
+  const envKeyMap = {
+    llmEnabled: 'LLM_ENABLED',
+    llmApiKey: 'LLM_API_KEY',
+    llmBaseUrl: 'LLM_BASE_URL',
+    llmModel: 'LLM_MODEL',
+    llmTimeoutMs: 'LLM_TIMEOUT_MS',
+    llmMaxTokens: 'LLM_MAX_COMPLETION_TOKENS',
+    esp32Enabled: 'ESP32_ENABLED',
+    serialPort: 'SERIAL_PORT',
+    serialBaudRate: 'SERIAL_BAUD_RATE'
+  };
+
+  Object.keys(body).forEach((key) => {
+    const value = body[key];
+    const envKey = envKeyMap[key];
+    if (envKey && value !== undefined && value !== null) {
+      process.env[envKey] = String(value);
+    }
+  });
+
+  res.json({ success: true, message: '配置已保存并立即生效，无需重启。' });
+
+  // 配置变更后重新检测模型可用性
+  refreshLlmHealth().catch(() => {});
+});
+
+app.listen(5000, async () => {
   console.log('服务器运行：http://localhost:5000');
   console.log('API 接口：');
   console.log('  GET  /api/state    - 获取系统状态');
   console.log('  POST /api/chat     - AI 文本对话');
   console.log('  POST /api/execute  - 执行设备动作');
+
+  // 启动时检测模型可用性
+  refreshLlmHealth().catch(() => {});
+  // 每 60 秒重新检测
+  setInterval(() => refreshLlmHealth().catch(() => {}), 60000);
 
   if (process.env.ESP32_ENABLED !== 'false') {
     connectSerial().catch((error) => {

@@ -121,8 +121,20 @@ function renderSystemStatus(system) {
     return;
   }
 
-  aiStatus.textContent = system.aiDecisionEnabled ? 'AI 决策已启用' : 'AI 决策已关闭';
-  aiStatus.className = `status-pill ${system.aiDecisionEnabled ? 'online' : 'warn'}`;
+  const llmStatus = system.llmStatus;
+  if (!llmStatus) {
+    aiStatus.textContent = 'AI 检测中...';
+    aiStatus.className = 'status-pill warn';
+  } else if (llmStatus.reachable && !llmStatus.authError) {
+    aiStatus.textContent = llmStatus.model ? `AI 已就绪 (${llmStatus.model})` : 'AI 已就绪';
+    aiStatus.className = 'status-pill online';
+  } else if (llmStatus.reachable && llmStatus.authError) {
+    aiStatus.textContent = 'AI API Key 无效';
+    aiStatus.className = 'status-pill offline';
+  } else {
+    aiStatus.textContent = llmStatus.reason || 'AI 不可用';
+    aiStatus.className = 'status-pill offline';
+  }
 
   connectionStatus.textContent = system.backendConnected ? '后端已连接' : '后端未连接';
   connectionStatus.className = `status-pill ${system.backendConnected ? 'online' : 'offline'}`;
@@ -141,7 +153,7 @@ function renderSystemStatus(system) {
   refreshText.textContent = `最近刷新：${formatRefreshTime(system.refreshedAt)}`;
 
   systemPanel.innerHTML = [
-    createSystemItem('AI 决策', system.aiDecisionEnabled ? '已启用' : '未启用'),
+    createSystemItem('AI 模型', formatLlmStatus(system)),
     createSystemItem('后端连接', system.backendConnected ? '正常' : '异常'),
     createSystemItem('硬件', formatEsp32Status(system)),
     createSystemItem('发现方式', formatEsp32Discovery(system)),
@@ -159,6 +171,27 @@ function createSystemItem(label, value) {
   `;
 }
 
+function formatLlmStatus(system) {
+  if (!system.aiDecisionEnabled) {
+    return '未启用';
+  }
+
+  const status = system.llmStatus;
+  if (!status) {
+    return '检测中...';
+  }
+
+  if (status.reachable && !status.authError) {
+    return `已连接 (${status.model || 'OK'})`;
+  }
+
+  if (status.reachable && status.authError) {
+    return 'API Key 无效';
+  }
+
+  return status.reason || '无法连接';
+}
+
 function formatEsp32Status(system) {
   if (!system.esp32Configured) {
     return '未配置';
@@ -168,12 +201,14 @@ function formatEsp32Status(system) {
     return '离线';
   }
 
+  const conn = system.esp32Connection;
   const parts = ['在线'];
-  if (typeof system.esp32.rssi === 'number') {
-    parts.push(`RSSI ${system.esp32.rssi}`);
+  if (conn && conn.mode === 'serial' && conn.serialPath) {
+    parts.push(conn.serialPath);
+    parts.push(`${conn.baudRate}bps`);
   }
-  if (system.esp32.ip) {
-    parts.push(system.esp32.ip);
+  if (conn && conn.mode === 'http' && conn.baseUrl) {
+    parts.push(conn.baseUrl);
   }
 
   return parts.join(' / ');
@@ -184,8 +219,18 @@ function formatEsp32Discovery(system) {
     return '未配置';
   }
 
-  const current = system.esp32?.connectedVia || system.esp32Discovery?.activeBaseUrl;
-  return current || '等待发现';
+  if (!system?.esp32Connected) {
+    return '离线';
+  }
+
+  const conn = system.esp32Connection;
+  if (conn && conn.mode === 'serial') {
+    return conn.connected ? 'USB 串口直连' : '串口断开';
+  }
+  if (conn && conn.mode === 'http') {
+    return 'HTTP 局域网';
+  }
+  return '已连接';
 }
 
 function formatHardwareDetails(system) {
@@ -203,7 +248,7 @@ function formatHardwareDetails(system) {
     details.push('IR API 已启动');
   }
   if (system.esp32.sensorReady === true) {
-    details.push('传感器就绪');
+    details.push('DHT22 就绪');
   }
   if (system.esp32.wifiConnected === true) {
     details.push('Wi-Fi 正常');

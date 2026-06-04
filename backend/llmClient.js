@@ -14,6 +14,8 @@ function getConfig() {
 
 function buildSystemPrompt() {
   return [
+    '重要：你必须且只能输出一个 JSON 对象，不能包含任何其他内容。不要输出 Markdown 代码块，不要输出解释文字，不要输出前缀或后缀。你的整个回复必须是一个可被 JSON.parse 直接解析的有效 JSON。',
+    '',
     '你是 Smart Home AI，一个偏智能家居场景的通用家庭助手。',
     '你可以回答家电知识、节能建议、生活场景建议、简单闲聊和设备控制相关问题。',
     '不要把所有用户输入都强行转换成设备控制动作。',
@@ -35,18 +37,27 @@ function buildSystemPrompt() {
     '如果设备已经处于目标状态，不要重复建议同一个动作，可以解释当前状态。',
     '如果空调 status=on 且 targetTemperature 等于你准备设置的温度，不要重复建议 set_temperature；应说明已经设置好了。',
     '位置和问题类型要优先匹配：照明问题优先考虑灯，温度/闷热/睡眠舒适优先考虑空调或风扇。',
-    '输出必须是 JSON 对象，不能包含 Markdown、代码块或额外解释。',
-    'JSON 字段固定为 reply、intent、needConfirm、action。',
-    'action 为 null，或包含 deviceId、command；参数化动作还必须包含 value。',
-    '常用 intent 可包括：device_control、home_advice、knowledge_question、general_chat、capability_query、comfort_sleep、lighting、unknown。'
+    '',
+    'JSON 响应格式（严格遵守）：',
+    '{',
+    '  "reply": "你的回复文字",',
+    '  "intent": "device_control|knowledge_question|general_chat|...",',
+    '  "needConfirm": true或false,',
+    '  "action": null 或 {"deviceId":"设备id","command":"动作","value":可选值}',
+    '}',
+    '',
+    '硬件状态会通过 hardware 字段传入。hardware.online=false 表示 ESP32 未连接，此时绝对不能生成 action，必须在 reply 中说明硬件未连接，并设置 needConfirm=false、action=null。',
+    '',
+    '记住：只输出 JSON，不要输出其他任何内容。'
   ].join('\n');
 }
 
-function buildUserPrompt({ message, environment, devices }) {
+function buildUserPrompt({ message, environment, devices, hardware }) {
   return JSON.stringify({
     userMessage: message,
     environment,
     devices,
+    hardware,
     deviceStateNotes: [
       'air_conditioner 可能包含 targetTemperature，表示当前设定温度。',
       'targetTemperature 表示空调当前设定温度，不是室内环境温度。',
@@ -101,7 +112,7 @@ function parseDecisionContent(content) {
   return JSON.parse(extractJsonText(content));
 }
 
-async function callLlmDecision({ message, environment, devices }) {
+async function callLlmDecision({ message, environment, devices, hardware }) {
   const config = getConfig();
 
   if (!config.enabled) {
@@ -119,12 +130,14 @@ async function callLlmDecision({ message, environment, devices }) {
     const response = await fetch(buildEndpoint(config.baseUrl), {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
         'api-key': config.apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: config.model,
         temperature: 0.2,
+        response_format: { type: 'json_object' },
         max_completion_tokens: Number.isFinite(config.maxCompletionTokens) && config.maxCompletionTokens > 0
           ? config.maxCompletionTokens
           : 1024,
@@ -135,7 +148,7 @@ async function callLlmDecision({ message, environment, devices }) {
           },
           {
             role: 'user',
-            content: buildUserPrompt({ message, environment, devices })
+            content: buildUserPrompt({ message, environment, devices, hardware })
           }
         ]
       }),
@@ -160,7 +173,55 @@ async function callLlmDecision({ message, environment, devices }) {
   }
 }
 
+async function checkLlmHealth() {
+  const config = getConfig();
+
+  if (!config.enabled) {
+    return { reachable: false, reason: 'LLM 未启用' };
+  }
+
+  if (!config.apiKey) {
+    return { reachable: false, reason: '未配置 API Key' };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(buildEndpoint(config.baseUrl), {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_completion_tokens: 1,
+        messages: [{ role: 'user', content: 'hi' }]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      return { reachable: true, model: config.model };
+    }
+
+    // 401/403 说明 API 可达但认证失败
+    if (response.status === 401 || response.status === 403) {
+      return { reachable: true, model: config.model, authError: true };
+    }
+
+    return { reachable: false, reason: `API 返回 ${response.status}` };
+  } catch (error) {
+    clearTimeout(timeout);
+    return { reachable: false, reason: error.name === 'AbortError' ? '连接超时' : error.message };
+  }
+}
+
 module.exports = {
   callLlmDecision,
+  checkLlmHealth,
   getConfig
 };

@@ -728,11 +728,6 @@ button {
     border-radius: 20px;
   }
 
-  .voice-status-head {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .input-area {
     grid-template-columns: 1fr;
   }

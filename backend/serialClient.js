@@ -170,13 +170,19 @@ async function getHardwareHealth(options = {}) {
   }
 
   try {
-    const response = await sendCommand({ cmd: 'health' });
-    return response;
+    await sendCommand({ cmd: 'health' });
   } catch (error) {
-    const cached2 = getLatestHealth();
-    if (cached2) return cached2;
-    throw error;
+    // ignore timeout, try cache
   }
+
+  const health = getLatestHealth();
+  if (health) {
+    return health;
+  }
+
+  const error = new Error('等待硬件数据超时');
+  error.code = 'SERIAL_TIMEOUT';
+  throw error;
 }
 
 async function sendIrCommand(commandProfile) {

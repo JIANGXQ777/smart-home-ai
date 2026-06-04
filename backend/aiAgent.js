@@ -356,7 +356,8 @@ async function decide(message) {
     const modelDecision = await callLlmDecision({
       message,
       environment,
-      devices
+      devices,
+      hardware: hardwareAvailability
     });
 
     const validation = validateDecision(modelDecision, devices);
@@ -369,6 +370,17 @@ async function decide(message) {
         return unsupportedSpecificActionReply();
       }
       return safeNoActionReply();
+    }
+
+    // 硬件离线时拒绝任何设备控制动作（即使 LLM 返回了 action）
+    if (!hardwareAvailability.online && validation.decision.action) {
+      console.log('LLM decision rejected: hardware offline');
+      return {
+        reply: '当前硬件未连接，暂时不能执行真实控制。你可以先检查 ESP32 连接，或者问我设备能力相关问题。',
+        intent: 'hardware_offline',
+        needConfirm: false,
+        action: null
+      };
     }
 
     return validation.decision;
