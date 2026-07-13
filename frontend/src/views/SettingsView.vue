@@ -4,7 +4,7 @@ import { Save, Volume2 } from '@lucide/vue'
 import { api } from '../api/client'
 import { useSystemStore } from '../stores/system'
 
-const form = reactive({ appMode: 'demo', esp32Enabled: false, esp32Transport: 'auto', esp32WsToken: '', esp32WsPath: '/ws/esp32', serialPort: '', serialBaudRate: 115200, voiceEnabled: false, voiceVadThreshold: 700, voiceSilenceMs: 700 })
+const form = reactive({ appMode: 'demo', esp32Enabled: false, esp32Transport: 'auto', esp32WsToken: '', esp32WsPath: '/ws/esp32', serialPort: '', serialBaudRate: 115200, voiceEnabled: false, voicePlaybackTarget: 'esp32', voiceVadThreshold: 700, voiceSilenceMs: 700 })
 const notice = ref('')
 const error = ref('')
 const saving = ref(false)
@@ -55,10 +55,11 @@ async function testVoice() {
     <section class="card voice-terminal-card">
       <div class="section-title"><div><small>VOICE TERMINAL</small><h2>硬件语音终端</h2></div><Volume2 :size="21"/></div>
       <label class="switch-row"><span>启用麦克风持续监听</span><input v-model="form.voiceEnabled" type="checkbox"/></label>
+      <label>语音输出设备<select v-model="form.voicePlaybackTarget"><option value="browser">电脑默认音频设备</option><option value="esp32">ESP32 MAX98357A 扬声器</option></select></label>
       <label>声音检测阈值<input v-model.number="form.voiceVadThreshold" type="number" min="50" max="10000"/></label>
       <label>结束静音时间（ms）<input v-model.number="form.voiceSilenceMs" type="number" min="200" max="3000"/></label>
       <button type="button" class="btn secondary" @click="testVoice"><Volume2 :size="17"/>播放硬件测试音</button>
-      <p class="muted">ASR、TTS 和语言模型的接口、模型与密钥请在“模型配置”中管理。</p>
+      <p class="muted">选择电脑输出后，需要在页面顶部点击一次“启用电脑播放”；声音将使用 Windows 当前默认设备，包括已连接的蓝牙音响。</p>
     </section>
     <div class="settings-actions"><div><span v-if="notice" class="alert">{{ notice }}</span><span v-if="error" class="alert error">{{ error }}</span></div><button class="btn primary" :disabled="saving"><Save :size="18"/>{{ saving ? '保存中…' : '保存系统设置' }}</button></div>
   </form>

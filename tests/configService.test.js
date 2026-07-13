@@ -30,12 +30,14 @@ test('合法配置通过临时文件原子替换保存', () => {
     serialPort: 'COM3',
     serialBaudRate: 115200,
     voiceEnabled: true,
+    voicePlaybackTarget: 'browser',
     voiceVadThreshold: 800,
     voiceSilenceMs: 650
   });
   assert.equal(config.appMode, 'hybrid');
   const content = fs.readFileSync(envPath, 'utf8');
   assert.match(content, /VOICE_VAD_THRESHOLD=800/);
+  assert.match(content, /VOICE_PLAYBACK_TARGET=browser/);
   assert.equal(fs.readdirSync(testDir).filter(name => name.endsWith('.tmp')).length, 0);
 });
 

@@ -257,6 +257,38 @@ void serviceVoicePlayback() {
   i2s_channel_write(i2sTxChannel, voiceI2sTxFrame, sizeof(voiceI2sTxFrame), &bytesWritten, 30);
 }
 
+void playVoiceLocalTone() {
+  if (!audioReady || !i2sTxChannel) {
+    sendVoiceEvent("voice.error", "\"message\":\"local tone audio unavailable\"");
+    return;
+  }
+
+  voiceCaptureEnabled = false;
+  voicePlaybackActive = false;
+  voicePlaybackStopRequested = false;
+  clearPlaybackBuffer();
+  setVoiceSpeakerEnabled(true);
+  delay(3);
+
+  const size_t frameCount = 700 / VOICE_FRAME_MS;
+  const float radiansPerSample = 2.0f * PI * 440.0f / VOICE_SAMPLE_RATE;
+  size_t sampleIndex = 0;
+  for (size_t frame = 0; frame < frameCount; frame++) {
+    for (size_t index = 0; index < VOICE_FRAME_SAMPLES; index++, sampleIndex++) {
+      int16_t pcm = static_cast<int16_t>(sinf(radiansPerSample * sampleIndex) * 5000.0f);
+      int32_t sample = static_cast<int32_t>(pcm) * 65536;
+      voiceI2sTxFrame[index * 2] = sample;
+      voiceI2sTxFrame[index * 2 + 1] = sample;
+    }
+    size_t bytesWritten = 0;
+    i2s_channel_write(i2sTxChannel, voiceI2sTxFrame, sizeof(voiceI2sTxFrame), &bytesWritten, 50);
+  }
+
+  setVoiceSpeakerEnabled(false);
+  sendVoiceEvent("voice.local-tone.finished");
+  if (webSocketConnected) voiceCaptureEnabled = true;
+}
+
 void serviceVoiceCapture() {
   if (!audioReady || !voiceCaptureEnabled || voicePlaybackActive || !webSocketConnected) return;
   size_t bytesRead = 0;
@@ -423,6 +455,8 @@ bool processVoiceMessage(const String& message) {
   } else if (type == "voice.playback.stop") {
     voicePlaybackStopRequested = true;
     if (voicePlaybackBufferedBytes == 0) finishVoicePlayback();
+  } else if (type == "voice.test.local-tone") {
+    playVoiceLocalTone();
   }
   return true;
 }

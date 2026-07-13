@@ -37,5 +37,10 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  return { messages, pendingAction, sending, send, confirm }
+  function appendVoiceExchange(transcript, reply, error = '') {
+    if (transcript) messages.value.push({ role: 'user', text: transcript, voice: true })
+    if (reply || error) messages.value.push({ role: 'assistant', text: error || reply, error: Boolean(error), voice: true })
+  }
+
+  return { messages, pendingAction, sending, send, confirm, appendVoiceExchange }
 })

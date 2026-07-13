@@ -12,6 +12,7 @@ function getSpeechConfig() {
       apiKey: asr.apiKey,
       baseUrl: String(asr.baseUrl).replace(/\/+$/, ''),
       model: asr.model,
+      endpointPath: String(asr.settings.endpointPath || ''),
       language: String(asr.settings.language || 'zh'),
       timeoutMs: Number(asr.settings.timeoutMs || 30000)
     },
@@ -21,9 +22,11 @@ function getSpeechConfig() {
       apiKey: tts.apiKey,
       baseUrl: String(tts.baseUrl).replace(/\/+$/, ''),
       model: tts.model,
+      endpointPath: String(tts.settings.endpointPath || ''),
       voice: String(tts.settings.voice || 'alloy'),
       timeoutMs: Number(tts.settings.timeoutMs || 30000),
-      sourceSampleRate: Number(tts.settings.sourceSampleRate || 24000)
+      sourceSampleRate: Number(tts.settings.sourceSampleRate || 24000),
+      volume: Number(tts.settings.volume ?? 0.25)
     }
   };
 }
@@ -31,8 +34,22 @@ function getSpeechConfig() {
 function isSpeechConfigured() {
   const config = getSpeechConfig();
   return config.enabled &&
-    config.asr.enabled && Boolean(config.asr.apiKey && config.asr.model) &&
-    config.tts.enabled && Boolean(config.tts.apiKey && config.tts.model);
+    config.asr.enabled && Boolean(config.asr.apiKey && config.asr.model && config.asr.baseUrl && config.asr.endpointPath) &&
+    config.tts.enabled && Boolean(config.tts.apiKey && config.tts.model && config.tts.baseUrl && config.tts.endpointPath);
+}
+
+function buildRequestUrl(baseUrl, endpointPath) {
+  return `${String(baseUrl || '').replace(/\/+$/, '')}/${String(endpointPath || '').replace(/^\/+/, '')}`;
+}
+
+function isMiMoConfig(config) {
+  const provider = String(config.provider || '').toLowerCase().replace(/[\s_-]+/g, '');
+  if (provider.includes('xiaomimimo') || provider === 'mimo' || provider === 'xiaomi') return true;
+  try {
+    return new URL(config.baseUrl).hostname.toLowerCase().endsWith('xiaomimimo.com');
+  } catch (error) {
+    return false;
+  }
 }
 
 function createWav(pcm, sampleRate) {
@@ -93,6 +110,17 @@ function resamplePcm16(pcm, sourceRate, targetRate) {
   return output;
 }
 
+function applyPcmGain(pcm, gain) {
+  const normalizedGain = Math.max(0, Math.min(1, Number(gain)));
+  if (normalizedGain === 1) return pcm;
+  const output = Buffer.alloc(pcm.length);
+  for (let offset = 0; offset + 1 < pcm.length; offset += 2) {
+    const sample = Math.round(pcm.readInt16LE(offset) * normalizedGain);
+    output.writeInt16LE(Math.max(-32768, Math.min(32767, sample)), offset);
+  }
+  return output;
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -103,17 +131,93 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
+function extractResponseError(data, fallback) {
+  return data?.error?.message || data?.message || fallback;
+}
+
+function extractMiMoTranscript(data) {
+  const message = data?.choices?.[0]?.message;
+  if (typeof message?.content === 'string') return message.content.trim();
+  if (Array.isArray(message?.content)) {
+    const text = message.content
+      .map((item) => typeof item === 'string' ? item : item?.text || item?.content || '')
+      .join('')
+      .trim();
+    if (text) return text;
+  }
+  return String(data?.text || data?.output_text || '').trim();
+}
+
+async function transcribeMiMo(pcm, config, asr) {
+  const wav = createWav(pcm, config.inputSampleRate);
+  const response = await fetchWithTimeout(buildRequestUrl(asr.baseUrl, asr.endpointPath), {
+    method: 'POST',
+    headers: {
+      'api-key': asr.apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: asr.model,
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'input_audio',
+          input_audio: { data: `data:audio/wav;base64,${wav.toString('base64')}` }
+        }]
+      }],
+      asr_options: { language: asr.language || 'auto' }
+    })
+  }, asr.timeoutMs);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(extractResponseError(data, `MiMo 语音识别失败 (${response.status})`));
+  const text = extractMiMoTranscript(data);
+  if (!text) throw new Error('MiMo 语音识别未返回文本');
+  return text;
+}
+
+async function synthesizeMiMo(text, config, tts) {
+  const response = await fetchWithTimeout(buildRequestUrl(tts.baseUrl, tts.endpointPath), {
+    method: 'POST',
+    headers: {
+      'api-key': tts.apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: tts.model,
+      messages: [{ role: 'assistant', content: text }],
+      audio: {
+        format: 'wav',
+        voice: tts.voice
+      }
+    })
+  }, tts.timeoutMs);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(extractResponseError(data, `MiMo 语音合成失败 (${response.status})`));
+  const audioData = data?.choices?.[0]?.message?.audio?.data || data?.audio?.data;
+  if (!audioData || typeof audioData !== 'string') throw new Error('MiMo 语音合成未返回音频');
+  let raw;
+  try {
+    raw = Buffer.from(audioData, 'base64');
+  } catch (error) {
+    throw new Error('MiMo 语音合成返回的音频编码无效');
+  }
+  const decoded = extractWavPcm(raw, tts.sourceSampleRate);
+  const resampled = resamplePcm16(decoded.pcm, decoded.sampleRate, config.inputSampleRate);
+  return applyPcmGain(resampled, tts.volume);
+}
+
 async function transcribePcm(pcm) {
   const config = getSpeechConfig();
   const asr = config.asr;
-  if (!config.enabled || !asr.enabled || !asr.apiKey || !asr.model) {
+  if (!config.enabled || !asr.enabled || !asr.apiKey || !asr.model || !asr.baseUrl || !asr.endpointPath) {
     throw new Error('ASR 服务尚未配置');
   }
+  if (isMiMoConfig(asr)) return transcribeMiMo(pcm, config, asr);
   const form = new FormData();
   form.append('model', asr.model);
   form.append('language', asr.language);
   form.append('file', new Blob([createWav(pcm, config.inputSampleRate)], { type: 'audio/wav' }), 'speech.wav');
-  const response = await fetchWithTimeout(asr.baseUrl, {
+  const response = await fetchWithTimeout(buildRequestUrl(asr.baseUrl, asr.endpointPath), {
     method: 'POST',
     headers: { Authorization: `Bearer ${asr.apiKey}` },
     body: form
@@ -128,10 +232,11 @@ async function transcribePcm(pcm) {
 async function synthesizeSpeech(text) {
   const config = getSpeechConfig();
   const tts = config.tts;
-  if (!config.enabled || !tts.enabled || !tts.apiKey || !tts.model) {
+  if (!config.enabled || !tts.enabled || !tts.apiKey || !tts.model || !tts.baseUrl || !tts.endpointPath) {
     throw new Error('TTS 服务尚未配置');
   }
-  const response = await fetchWithTimeout(tts.baseUrl, {
+  if (isMiMoConfig(tts)) return synthesizeMiMo(text, config, tts);
+  const response = await fetchWithTimeout(buildRequestUrl(tts.baseUrl, tts.endpointPath), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${tts.apiKey}`,
@@ -150,12 +255,15 @@ async function synthesizeSpeech(text) {
   }
   const raw = Buffer.from(await response.arrayBuffer());
   const decoded = extractWavPcm(raw, tts.sourceSampleRate);
-  return resamplePcm16(decoded.pcm, decoded.sampleRate, config.inputSampleRate);
+  const resampled = resamplePcm16(decoded.pcm, decoded.sampleRate, config.inputSampleRate);
+  return applyPcmGain(resampled, tts.volume);
 }
 
 module.exports = {
+  applyPcmGain,
   createWav,
   getSpeechConfig,
+  isMiMoConfig,
   isSpeechConfigured,
   resamplePcm16,
   synthesizeSpeech,

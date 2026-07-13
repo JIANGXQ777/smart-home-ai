@@ -14,6 +14,7 @@ const FIELD_MAP = {
   serialPort: 'SERIAL_PORT',
   serialBaudRate: 'SERIAL_BAUD_RATE',
   voiceEnabled: 'VOICE_ENABLED',
+  voicePlaybackTarget: 'VOICE_PLAYBACK_TARGET',
   voiceVadThreshold: 'VOICE_VAD_THRESHOLD',
   voiceSilenceMs: 'VOICE_SILENCE_MS'
 };
@@ -46,6 +47,9 @@ function getPublicConfig() {
     serialPort: process.env.SERIAL_PORT || '',
     serialBaudRate: Number(process.env.SERIAL_BAUD_RATE || 115200),
     voiceEnabled: booleanValue(process.env.VOICE_ENABLED, false),
+    voicePlaybackTarget: ['esp32', 'browser'].includes(process.env.VOICE_PLAYBACK_TARGET)
+      ? process.env.VOICE_PLAYBACK_TARGET
+      : 'esp32',
     voiceVadThreshold: Number(process.env.VOICE_VAD_THRESHOLD || 700),
     voiceSilenceMs: Number(process.env.VOICE_SILENCE_MS || 700)
   };
@@ -84,6 +88,10 @@ function validateNumber(field, value, min, max) {
 }
 
 function validateConfig(normalized) {
+  if (normalized.voicePlaybackTarget !== undefined &&
+      !['esp32', 'browser'].includes(String(normalized.voicePlaybackTarget))) {
+    throw new Error('语音输出设备必须是 esp32 或 browser');
+  }
   if (normalized.serialPort !== undefined) validateText('串口地址', normalized.serialPort, 256);
   if (normalized.esp32WsToken !== undefined && normalized.esp32WsToken !== '') {
     const token = validateText('ESP32 WebSocket 令牌', normalized.esp32WsToken, 4096);

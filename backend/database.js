@@ -150,6 +150,45 @@ function migrate(db) {
       PRAGMA user_version = 4;
       COMMIT;
     `);
+    version = 4;
+  }
+
+  if (version < 5) {
+    db.exec(`
+      BEGIN IMMEDIATE;
+
+      UPDATE model_configs
+      SET base_url = substr(base_url, 1, length(base_url) - length('/chat/completions')),
+          settings_json = json_set(settings_json, '$.endpointPath', '/chat/completions'),
+          updated_at = datetime('now')
+      WHERE type = 'llm'
+        AND base_url LIKE '%/chat/completions';
+
+      UPDATE model_configs
+      SET base_url = CASE
+            WHEN base_url LIKE '%/audio/transcriptions'
+              THEN substr(base_url, 1, length(base_url) - length('/audio/transcriptions'))
+            ELSE base_url
+          END,
+          enabled = 0,
+          settings_json = json_set(settings_json, '$.endpointPath', ''),
+          updated_at = datetime('now')
+      WHERE type = 'asr';
+
+      UPDATE model_configs
+      SET base_url = CASE
+            WHEN base_url LIKE '%/audio/speech'
+              THEN substr(base_url, 1, length(base_url) - length('/audio/speech'))
+            ELSE base_url
+          END,
+          enabled = 0,
+          settings_json = json_set(settings_json, '$.endpointPath', ''),
+          updated_at = datetime('now')
+      WHERE type = 'tts';
+
+      PRAGMA user_version = 5;
+      COMMIT;
+    `);
   }
 }
 

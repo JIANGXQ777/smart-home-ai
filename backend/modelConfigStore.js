@@ -13,13 +13,6 @@ function numericValue(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function endpointFromEnvironment(endpoint, legacyBaseUrl, defaultPath) {
-  const direct = String(endpoint || '').trim();
-  if (direct) return direct;
-  const baseUrl = String(legacyBaseUrl || '').trim().replace(/\/+$/, '');
-  return baseUrl ? `${baseUrl}${defaultPath}` : '';
-}
-
 function envDefaults() {
   const voiceBaseUrl = process.env.VOICE_BASE_URL || '';
   const voiceApiKey = process.env.VOICE_API_KEY || '';
@@ -28,48 +21,40 @@ function envDefaults() {
     llm: {
       enabled: booleanValue(process.env.LLM_ENABLED, true),
       provider: process.env.LLM_PROVIDER || 'openai-compatible',
-      baseUrl: endpointFromEnvironment(
-        process.env.LLM_ENDPOINT,
-        process.env.LLM_BASE_URL,
-        '/chat/completions'
-      ),
+      baseUrl: process.env.LLM_BASE_URL || '',
       apiKey: process.env.LLM_API_KEY || '',
       model: process.env.LLM_MODEL || 'gpt-4o-mini',
       settings: {
         timeoutMs: numericValue(process.env.LLM_TIMEOUT_MS, 15000),
         maxCompletionTokens: numericValue(process.env.LLM_MAX_COMPLETION_TOKENS, 1024),
-        temperature: numericValue(process.env.LLM_TEMPERATURE, 0.2)
+        temperature: numericValue(process.env.LLM_TEMPERATURE, 0.2),
+        endpointPath: process.env.LLM_ENDPOINT_PATH || (process.env.LLM_BASE_URL ? '/chat/completions' : '')
       }
     },
     asr: {
       enabled: voiceEnabled,
       provider: process.env.VOICE_ASR_PROVIDER || 'openai-compatible',
-      baseUrl: endpointFromEnvironment(
-        process.env.VOICE_ASR_ENDPOINT,
-        process.env.VOICE_ASR_BASE_URL || voiceBaseUrl,
-        '/audio/transcriptions'
-      ),
+      baseUrl: process.env.VOICE_ASR_BASE_URL || voiceBaseUrl,
       apiKey: process.env.VOICE_ASR_API_KEY || voiceApiKey,
       model: process.env.VOICE_STT_MODEL || 'gpt-4o-mini-transcribe',
       settings: {
         language: process.env.VOICE_ASR_LANGUAGE || 'zh',
-        timeoutMs: numericValue(process.env.VOICE_TIMEOUT_MS, 30000)
+        timeoutMs: numericValue(process.env.VOICE_TIMEOUT_MS, 30000),
+        endpointPath: process.env.VOICE_ASR_ENDPOINT_PATH || ''
       }
     },
     tts: {
       enabled: voiceEnabled,
       provider: process.env.VOICE_TTS_PROVIDER || 'openai-compatible',
-      baseUrl: endpointFromEnvironment(
-        process.env.VOICE_TTS_ENDPOINT,
-        process.env.VOICE_TTS_BASE_URL || voiceBaseUrl,
-        '/audio/speech'
-      ),
+      baseUrl: process.env.VOICE_TTS_BASE_URL || voiceBaseUrl,
       apiKey: process.env.VOICE_TTS_API_KEY || voiceApiKey,
       model: process.env.VOICE_TTS_MODEL || 'gpt-4o-mini-tts',
       settings: {
         voice: process.env.VOICE_TTS_VOICE || 'alloy',
         timeoutMs: numericValue(process.env.VOICE_TIMEOUT_MS, 30000),
-        sourceSampleRate: numericValue(process.env.VOICE_TTS_SAMPLE_RATE, 24000)
+        sourceSampleRate: numericValue(process.env.VOICE_TTS_SAMPLE_RATE, 24000),
+        volume: numericValue(process.env.VOICE_TTS_VOLUME, 0.25),
+        endpointPath: process.env.VOICE_TTS_ENDPOINT_PATH || ''
       }
     }
   };
@@ -188,6 +173,10 @@ function integerSetting(field, value, min, max) {
 function normalizeSettings(type, settings, current) {
   const value = { ...current, ...(settings || {}) };
   value.timeoutMs = integerSetting('请求超时时间', value.timeoutMs, 1000, 120000);
+  value.endpointPath = validateText('请求接口', value.endpointPath || '', 512, true);
+  if (value.endpointPath && !value.endpointPath.startsWith('/')) {
+    throw new Error('请求接口必须以 / 开头');
+  }
   if (type === 'llm') {
     value.maxCompletionTokens = integerSetting('最大 Token 数', value.maxCompletionTokens, 1, 32768);
     const temperature = Number(value.temperature);
@@ -200,6 +189,11 @@ function normalizeSettings(type, settings, current) {
   } else if (type === 'tts') {
     value.voice = validateText('TTS 音色', value.voice || 'alloy', 64);
     value.sourceSampleRate = integerSetting('TTS 源采样率', value.sourceSampleRate, 8000, 48000);
+    const volume = Number(value.volume ?? 0.25);
+    if (!Number.isFinite(volume) || volume < 0.05 || volume > 1) {
+      throw new Error('TTS 播放音量必须在 0.05-1 之间');
+    }
+    value.volume = volume;
   }
   return value;
 }
@@ -213,15 +207,17 @@ function normalizeModelConfig(type, input, current) {
       ? current.apiKey
       : validateText('API Key', apiKeyInput, 4096);
   const baseUrlInput = String(input.baseUrl ?? current.baseUrl ?? '').trim();
-  if (enabled && !baseUrlInput) throw new Error(`${type.toUpperCase()} 请求接口不能为空`);
+  const settings = normalizeSettings(type, input.settings, current.settings);
+  if (enabled && !baseUrlInput) throw new Error(`${type.toUpperCase()} 服务地址不能为空`);
+  if (enabled && !settings.endpointPath) throw new Error(`${type.toUpperCase()} 请求接口不能为空`);
   return {
     type,
     enabled,
     provider: validateText('服务商', input.provider ?? current.provider, 64),
-    baseUrl: baseUrlInput ? validateUrl('请求接口', baseUrlInput) : '',
+    baseUrl: baseUrlInput ? validateUrl('服务地址', baseUrlInput) : '',
     apiKey,
     model: validateText('模型名称', input.model ?? current.model, 128),
-    settings: normalizeSettings(type, input.settings, current.settings)
+    settings
   };
 }
 

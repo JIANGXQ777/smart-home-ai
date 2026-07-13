@@ -13,7 +13,8 @@ function getConfig() {
     model: config.model,
     timeoutMs: Number(config.settings.timeoutMs || 15000),
     maxCompletionTokens: Number(config.settings.maxCompletionTokens || 1024),
-    temperature: Number(config.settings.temperature ?? 0.2)
+    temperature: Number(config.settings.temperature ?? 0.2),
+    endpointPath: String(config.settings.endpointPath || '')
   };
 }
 
@@ -91,8 +92,8 @@ function buildUserPrompt({ message, environment, devices, hardware }) {
   });
 }
 
-function buildEndpoint(endpoint) {
-  return String(endpoint || '').trim();
+function buildEndpoint(baseUrl, endpointPath) {
+  return `${String(baseUrl || '').replace(/\/+$/, '')}/${String(endpointPath || '').replace(/^\/+/, '')}`;
 }
 
 function extractJsonText(text) {
@@ -128,7 +129,7 @@ async function callLlmDecision({ message, environment, devices, hardware }) {
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(buildEndpoint(config.baseUrl), {
+    const response = await fetch(buildEndpoint(config.baseUrl, config.endpointPath), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
@@ -189,7 +190,7 @@ async function checkLlmHealth() {
   const timeout = setTimeout(() => controller.abort(), 4000);
 
   try {
-    const response = await fetch(buildEndpoint(config.baseUrl), {
+    const response = await fetch(buildEndpoint(config.baseUrl, config.endpointPath), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,

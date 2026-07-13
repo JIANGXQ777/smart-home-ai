@@ -100,7 +100,7 @@ test('模型配置写入 SQLite 且公开接口不返回 API Key', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: 'secret-test-key',
       model: 'test-model',
-      settings: { timeoutMs: 5000, maxCompletionTokens: 512, temperature: 0.3 }
+      settings: { endpointPath: '/v1/chat/completions', timeoutMs: 5000, maxCompletionTokens: 512, temperature: 0.3 }
     },
     asr: {
       enabled: true,
@@ -108,14 +108,14 @@ test('模型配置写入 SQLite 且公开接口不返回 API Key', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: 'asr-secret',
       model: 'test-asr',
-      settings: { language: 'zh', timeoutMs: 10000 }
+      settings: { endpointPath: '/v1/chat/completions', language: 'zh', timeoutMs: 10000 }
     }
   });
 
   assert.equal(saved.llm.apiKey, '');
   assert.equal(saved.llm.apiKeyConfigured, true);
   assert.equal(modelConfigStore.getModelConfig('llm').apiKey, 'secret-test-key');
-  assert.equal(database.getDatabase().prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(database.getDatabase().prepare('PRAGMA user_version').get().user_version, 5);
 
   database.closeDatabase();
   assert.equal(modelConfigStore.getModelConfig('llm').model, 'test-model');

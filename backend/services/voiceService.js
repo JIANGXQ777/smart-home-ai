@@ -1,4 +1,5 @@
 const {
+  createWav,
   getSpeechConfig,
   isSpeechConfigured,
   synthesizeSpeech,
@@ -24,9 +25,20 @@ let receivedFrames = 0;
 let receivedBytes = 0;
 let lastLevel = 0;
 let utteranceCount = 0;
+let browserAudioSequence = 0;
+let browserAudio = null;
+let browserPlaybackTimer = null;
+let manualRecording = false;
+let manualRecordingStartedAt = 0;
+let manualSessionSequence = 0;
+let manualResult = null;
 
 function voiceEnabled() {
   return process.env.VOICE_ENABLED === 'true';
+}
+
+function playbackTarget() {
+  return process.env.VOICE_PLAYBACK_TARGET === 'browser' ? 'browser' : 'esp32';
 }
 
 function numericEnv(name, fallback) {
@@ -67,6 +79,9 @@ function detachClient(client) {
   playing = false;
   speechFrames = [];
   preRollFrames = [];
+  manualRecording = false;
+  manualRecordingStartedAt = 0;
+  manualResult = null;
 }
 
 function calculateLevel(frame) {
@@ -117,6 +132,18 @@ async function playPcm(pcm) {
   if (!activeClient || !pcm.length) return;
   playing = true;
   setCapture(false);
+  if (playbackTarget() === 'browser') {
+    browserAudioSequence += 1;
+    browserAudio = {
+      id: browserAudioSequence,
+      wav: createWav(pcm, numericEnv('VOICE_SAMPLE_RATE', 16000)),
+      createdAt: new Date().toISOString()
+    };
+    clearTimeout(browserPlaybackTimer);
+    const durationMs = pcm.length / 2 / numericEnv('VOICE_SAMPLE_RATE', 16000) * 1000;
+    browserPlaybackTimer = setTimeout(() => finishBrowserPlayback(browserAudioSequence), durationMs + 10000);
+    return;
+  }
   const sampleRate = numericEnv('VOICE_SAMPLE_RATE', 16000);
   const frameBytes = Math.floor(sampleRate * 2 * FRAME_MS / 1000);
   sendControl('voice.playback.start', { sampleRate, bytes: pcm.length });
@@ -130,29 +157,96 @@ async function playPcm(pcm) {
   if (voiceEnabled()) setCapture(true);
 }
 
-async function processUtterance(pcm) {
+function getBrowserAudio(afterId = 0) {
+  if (!browserAudio || browserAudio.id <= Number(afterId || 0)) return null;
+  return browserAudio;
+}
+
+function finishBrowserPlayback(audioId) {
+  if (!browserAudio || Number(audioId) !== browserAudio.id) return false;
+  clearTimeout(browserPlaybackTimer);
+  browserPlaybackTimer = null;
+  playing = false;
+  browserAudio = null;
+  if (voiceEnabled()) setCapture(true);
+  return true;
+}
+
+async function processUtterance(pcm, manualSessionId = null) {
   processing = true;
   speaking = false;
   setCapture(false);
   utteranceCount += 1;
+  let transcript = '';
+  let reply = '';
+  if (manualSessionId && manualResult?.id === manualSessionId) {
+    manualResult = { id: manualSessionId, status: 'processing', transcript: '', reply: '', error: '' };
+  }
   try {
     if (!isSpeechConfigured()) {
       throw new Error('音频链路正常，请在模型配置中完成 ASR 和 TTS 设置');
     }
-    lastTranscript = await transcribePcm(pcm);
-    sendControl('voice.transcript', { text: lastTranscript });
-    lastReply = await buildVoiceReply(lastTranscript);
-    sendControl('voice.reply', { text: lastReply, needConfirm: Boolean(pendingAction) });
-    const audio = await synthesizeSpeech(lastReply);
+    transcript = await transcribePcm(pcm);
+    lastTranscript = transcript;
+    sendControl('voice.transcript', { text: transcript });
+    reply = await buildVoiceReply(transcript);
+    lastReply = reply;
+    sendControl('voice.reply', { text: reply, needConfirm: Boolean(pendingAction) });
+    const audio = await synthesizeSpeech(reply);
     await playPcm(audio);
     lastError = '';
+    if (manualSessionId && manualResult?.id === manualSessionId) {
+      manualResult = { id: manualSessionId, status: 'completed', transcript, reply, error: '' };
+    }
   } catch (error) {
     lastError = error.message;
+    if (manualSessionId && manualResult?.id === manualSessionId) {
+      manualResult = { id: manualSessionId, status: 'error', transcript, reply: '', error: error.message };
+    }
     sendControl('voice.error', { message: error.message });
   } finally {
     processing = false;
     if (voiceEnabled() && !playing) setCapture(true);
   }
+}
+
+function startManualRecording() {
+  if (!activeClient) throw new Error('ESP32 语音终端未连接');
+  if (!voiceEnabled()) throw new Error('硬件语音终端未启用');
+  if (manualRecording) throw new Error('硬件麦克风正在录音');
+  if (playing || processing) throw new Error('语音服务正忙，请稍后再试');
+  manualSessionSequence += 1;
+  manualRecording = true;
+  manualRecordingStartedAt = Date.now();
+  manualResult = { id: manualSessionSequence, status: 'recording', transcript: '', reply: '', error: '' };
+  speechFrames = [];
+  preRollFrames = [];
+  speaking = true;
+  setCapture(true);
+  sendControl('voice.manual-recording.started', { id: manualSessionSequence });
+  return manualResult;
+}
+
+function stopManualRecording() {
+  if (!manualRecording) throw new Error('当前没有正在进行的录音');
+  const sessionId = manualSessionSequence;
+  manualRecording = false;
+  manualRecordingStartedAt = 0;
+  speaking = false;
+  setCapture(false);
+  sendControl('voice.manual-recording.stopped', { id: sessionId });
+  const pcm = Buffer.concat(speechFrames);
+  speechFrames = [];
+  preRollFrames = [];
+  const minimumBytes = numericEnv('VOICE_SAMPLE_RATE', 16000) * 2 * numericEnv('VOICE_MIN_SPEECH_MS', 400) / 1000;
+  if (pcm.length < minimumBytes) {
+    manualResult = { id: sessionId, status: 'error', transcript: '', reply: '', error: '录音时间太短，请至少录制 0.4 秒' };
+    if (voiceEnabled()) setCapture(true);
+    return manualResult;
+  }
+  manualResult = { id: sessionId, status: 'processing', transcript: '', reply: '', error: '' };
+  void processUtterance(pcm, sessionId);
+  return manualResult;
 }
 
 function finishUtterance() {
@@ -180,6 +274,13 @@ function handleAudioFrame(client, frame) {
   receivedFrames += 1;
   receivedBytes += frame.length;
   lastLevel = calculateLevel(frame);
+  if (manualRecording) {
+    speechFrames.push(Buffer.from(frame));
+    if (now - manualRecordingStartedAt >= numericEnv('VOICE_MAX_SPEECH_MS', 15000)) {
+      stopManualRecording();
+    }
+    return;
+  }
   const threshold = numericEnv('VOICE_VAD_THRESHOLD', 700);
   const silenceMs = numericEnv('VOICE_SILENCE_MS', 700);
   const maxSpeechMs = numericEnv('VOICE_MAX_SPEECH_MS', 15000);
@@ -235,6 +336,17 @@ async function playTestTone() {
   await playPcm(generateTestTone());
 }
 
+function playLocalDeviceTone() {
+  if (!activeClient) throw new Error('ESP32 语音终端未连接');
+  if (!sendControl('voice.test.local-tone')) throw new Error('本地测试音命令发送失败');
+}
+
+async function playSpeechTest(text = '你好，我是智能家居助手。') {
+  if (!activeClient) throw new Error('ESP32 语音终端未连接');
+  const audio = await synthesizeSpeech(String(text).slice(0, 200));
+  await playPcm(audio);
+}
+
 function getVoiceStatus() {
   const config = getSpeechConfig();
   return {
@@ -242,6 +354,10 @@ function getVoiceStatus() {
     connected: Boolean(activeClient),
     speechConfigured: isSpeechConfigured(),
     sampleRate: config.inputSampleRate,
+    playbackTarget: playbackTarget(),
+    browserAudioId: browserAudio?.id || null,
+    manualRecording,
+    manualResult,
     captureRequested,
     speaking,
     processing,
@@ -262,8 +378,14 @@ module.exports = {
   attachClient,
   detachClient,
   getVoiceStatus,
+  getBrowserAudio,
   handleAudioFrame,
   handleControlMessage,
+  finishBrowserPlayback,
+  playLocalDeviceTone,
+  playSpeechTest,
   playTestTone,
+  startManualRecording,
+  stopManualRecording,
   setCapture
 };

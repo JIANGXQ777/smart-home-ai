@@ -5,14 +5,15 @@ import { api } from '../api/client'
 import { useSystemStore } from '../stores/system'
 
 const defaults = {
-  llm: { type: 'llm', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { timeoutMs: 15000, maxCompletionTokens: 1024, temperature: 0.2 } },
-  asr: { type: 'asr', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { language: 'zh', timeoutMs: 30000 } },
-  tts: { type: 'tts', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { voice: 'alloy', timeoutMs: 30000, sourceSampleRate: 24000 } }
+  llm: { type: 'llm', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { endpointPath: '', timeoutMs: 15000, maxCompletionTokens: 1024, temperature: 0.2 } },
+  asr: { type: 'asr', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { endpointPath: '', language: 'zh', timeoutMs: 30000 } },
+  tts: { type: 'tts', enabled: false, provider: 'openai-compatible', baseUrl: '', apiKey: '', apiKeyConfigured: false, model: '', settings: { endpointPath: '', voice: 'alloy', timeoutMs: 30000, sourceSampleRate: 24000, volume: 0.25 } }
 }
 const models = reactive(structuredClone(defaults))
 const keyVisible = reactive({ llm: false, asr: false, tts: false })
 const loading = ref(true)
 const saving = ref(false)
+const testingTts = ref(false)
 const notice = ref('')
 const error = ref('')
 const configuredCount = computed(() => Object.values(models).filter(item => item.apiKeyConfigured || item.apiKey).length)
@@ -46,6 +47,17 @@ async function save() {
 }
 
 function keyPlaceholder(type) { return models[type].apiKeyConfigured ? '已保存，留空保持不变' : '输入服务商 API Key' }
+
+async function testTts() {
+  try {
+    testingTts.value = true
+    notice.value = ''
+    error.value = ''
+    const result = await api('/api/voice/test-speech', { method: 'POST', body: JSON.stringify({ text: '你好，我是智能家居助手。' }) })
+    notice.value = result.message
+  } catch (exception) { error.value = exception.message }
+  finally { testingTts.value = false }
+}
 </script>
 
 <template>
@@ -59,15 +71,15 @@ function keyPlaceholder(type) { return models[type].apiKeyConfigured ? '已保�
     <div v-else class="model-config-grid">
       <section class="card model-card">
         <div class="model-card-head"><div class="model-icon llm"><BrainCircuit :size="22"/></div><div><small>LANGUAGE MODEL</small><h2>语言模型</h2><p>负责理解指令、对话与设备决策</p></div><label class="model-switch"><span class="sr-only">启用语言模型</span><input v-model="models.llm.enabled" type="checkbox"/></label></div>
-        <div class="model-form"><label>服务商<input v-model.trim="models.llm.provider" placeholder="请输入服务商标识"/></label><label>完整请求接口<input v-model.trim="models.llm.baseUrl" type="url" placeholder="请输入完整请求接口"/></label><label>模型名称<input v-model.trim="models.llm.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.llm.apiKey" :type="keyVisible.llm ? 'text' : 'password'" :placeholder="keyPlaceholder('llm')"/><button type="button" @click="keyVisible.llm = !keyVisible.llm" :aria-label="keyVisible.llm ? '隐藏语言模型密钥' : '显示语言模型密钥'"><EyeOff v-if="keyVisible.llm" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row"><label>超时（ms）<input v-model.number="models.llm.settings.timeoutMs" type="number" min="1000" max="120000"/></label><label>最大 Token<input v-model.number="models.llm.settings.maxCompletionTokens" type="number" min="1" max="32768"/></label><label>温度<input v-model.number="models.llm.settings.temperature" type="number" min="0" max="2" step="0.1"/></label></div></div>
+        <div class="model-form"><label>服务商<input v-model.trim="models.llm.provider" placeholder="请输入服务商标识"/></label><label>服务地址<input v-model.trim="models.llm.baseUrl" type="url" placeholder="请输入服务地址"/></label><label>请求接口<input v-model.trim="models.llm.settings.endpointPath" placeholder="例如 /v1/chat/completions"/></label><label>模型名称<input v-model.trim="models.llm.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.llm.apiKey" :type="keyVisible.llm ? 'text' : 'password'" :placeholder="keyPlaceholder('llm')"/><button type="button" @click="keyVisible.llm = !keyVisible.llm" :aria-label="keyVisible.llm ? '隐藏语言模型密钥' : '显示语言模型密钥'"><EyeOff v-if="keyVisible.llm" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row"><label>超时（ms）<input v-model.number="models.llm.settings.timeoutMs" type="number" min="1000" max="120000"/></label><label>最大 Token<input v-model.number="models.llm.settings.maxCompletionTokens" type="number" min="1" max="32768"/></label><label>温度<input v-model.number="models.llm.settings.temperature" type="number" min="0" max="2" step="0.1"/></label></div></div>
       </section>
       <section class="card model-card">
         <div class="model-card-head"><div class="model-icon asr"><AudioLines :size="22"/></div><div><small>AUTOMATIC SPEECH RECOGNITION</small><h2>ASR 语音识别</h2><p>把 INMP441 采集的声音转换为文字</p></div><label class="model-switch"><span class="sr-only">启用 ASR</span><input v-model="models.asr.enabled" type="checkbox"/></label></div>
-        <div class="model-form"><label>服务商<input v-model.trim="models.asr.provider" placeholder="请输入服务商标识"/></label><label>完整请求接口<input v-model.trim="models.asr.baseUrl" type="url" placeholder="请输入完整请求接口"/></label><label>模型名称<input v-model.trim="models.asr.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.asr.apiKey" :type="keyVisible.asr ? 'text' : 'password'" :placeholder="keyPlaceholder('asr')"/><button type="button" @click="keyVisible.asr = !keyVisible.asr" :aria-label="keyVisible.asr ? '隐藏 ASR 密钥' : '显示 ASR 密钥'"><EyeOff v-if="keyVisible.asr" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row two"><label>识别语言<input v-model.trim="models.asr.settings.language" placeholder="zh"/></label><label>超时（ms）<input v-model.number="models.asr.settings.timeoutMs" type="number" min="1000" max="120000"/></label></div></div>
+        <div class="model-form"><label>服务商<input v-model.trim="models.asr.provider" placeholder="请输入服务商标识"/></label><label>服务地址<input v-model.trim="models.asr.baseUrl" type="url" placeholder="请输入服务地址"/></label><label>请求接口<input v-model.trim="models.asr.settings.endpointPath" placeholder="例如 /v1/chat/completions"/></label><label>模型名称<input v-model.trim="models.asr.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.asr.apiKey" :type="keyVisible.asr ? 'text' : 'password'" :placeholder="keyPlaceholder('asr')"/><button type="button" @click="keyVisible.asr = !keyVisible.asr" :aria-label="keyVisible.asr ? '隐藏 ASR 密钥' : '显示 ASR 密钥'"><EyeOff v-if="keyVisible.asr" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row two"><label>识别语言<input v-model.trim="models.asr.settings.language" placeholder="zh"/></label><label>超时（ms）<input v-model.number="models.asr.settings.timeoutMs" type="number" min="1000" max="120000"/></label></div></div>
       </section>
       <section class="card model-card">
         <div class="model-card-head"><div class="model-icon tts"><Volume2 :size="22"/></div><div><small>TEXT TO SPEECH</small><h2>TTS 语音合成</h2><p>把助手回复转换为扬声器音频</p></div><label class="model-switch"><span class="sr-only">启用 TTS</span><input v-model="models.tts.enabled" type="checkbox"/></label></div>
-        <div class="model-form"><label>服务商<input v-model.trim="models.tts.provider" placeholder="请输入服务商标识"/></label><label>完整请求接口<input v-model.trim="models.tts.baseUrl" type="url" placeholder="请输入完整请求接口"/></label><label>模型名称<input v-model.trim="models.tts.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.tts.apiKey" :type="keyVisible.tts ? 'text' : 'password'" :placeholder="keyPlaceholder('tts')"/><button type="button" @click="keyVisible.tts = !keyVisible.tts" :aria-label="keyVisible.tts ? '隐藏 TTS 密钥' : '显示 TTS 密钥'"><EyeOff v-if="keyVisible.tts" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row"><label>音色<input v-model.trim="models.tts.settings.voice" placeholder="请输入音色名称"/></label><label>超时（ms）<input v-model.number="models.tts.settings.timeoutMs" type="number" min="1000" max="120000"/></label><label>源采样率<input v-model.number="models.tts.settings.sourceSampleRate" type="number" min="8000" max="48000"/></label></div></div>
+        <div class="model-form"><label>服务商<input v-model.trim="models.tts.provider" placeholder="请输入服务商标识"/></label><label>服务地址<input v-model.trim="models.tts.baseUrl" type="url" placeholder="请输入服务地址"/></label><label>请求接口<input v-model.trim="models.tts.settings.endpointPath" placeholder="例如 /v1/chat/completions"/></label><label>模型名称<input v-model.trim="models.tts.model" placeholder="请输入模型名称"/></label><label>API Key<span class="secret-input"><input v-model.trim="models.tts.apiKey" :type="keyVisible.tts ? 'text' : 'password'" :placeholder="keyPlaceholder('tts')"/><button type="button" @click="keyVisible.tts = !keyVisible.tts" :aria-label="keyVisible.tts ? '隐藏 TTS 密钥' : '显示 TTS 密钥'"><EyeOff v-if="keyVisible.tts" :size="17"/><Eye v-else :size="17"/></button></span></label><div class="model-fields-row"><label>音色<input v-model.trim="models.tts.settings.voice" placeholder="请输入音色名称"/></label><label>播放音量<input v-model.number="models.tts.settings.volume" type="number" min="0.05" max="1" step="0.05"/></label><label>超时（ms）<input v-model.number="models.tts.settings.timeoutMs" type="number" min="1000" max="120000"/></label><label>源采样率<input v-model.number="models.tts.settings.sourceSampleRate" type="number" min="8000" max="48000"/></label></div><button type="button" class="btn secondary" :disabled="testingTts" @click="testTts"><Volume2 :size="17"/>{{ testingTts ? '合成中…' : '播放 TTS 测试语音' }}</button></div>
       </section>
     </div>
     <div class="model-save-bar"><div><span v-if="notice" class="alert">{{ notice }}</span><span v-if="error" class="alert error">{{ error }}</span></div><button class="btn primary" :disabled="loading || saving"><Save :size="18"/>{{ saving ? '保存中…' : '保存全部模型配置' }}</button></div>

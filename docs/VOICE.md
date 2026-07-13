@@ -72,8 +72,9 @@ USB CDC On Boot: Enabled
 ```env
 VOICE_ENABLED=true
 VOICE_API_KEY=your_voice_api_key
-VOICE_ASR_ENDPOINT=https://api.example.com/v1/audio/transcriptions
-VOICE_TTS_ENDPOINT=https://api.example.com/v1/audio/speech
+VOICE_BASE_URL=https://api.example.com
+VOICE_ASR_ENDPOINT_PATH=/v1/audio/transcriptions
+VOICE_TTS_ENDPOINT_PATH=/v1/audio/speech
 VOICE_STT_MODEL=gpt-4o-mini-transcribe
 VOICE_TTS_MODEL=gpt-4o-mini-tts
 VOICE_TTS_VOICE=alloy
@@ -82,7 +83,30 @@ VOICE_VAD_THRESHOLD=700
 VOICE_SILENCE_MS=700
 ```
 
-ASR、TTS 与文本 LLM 可分别配置服务商、完整请求接口、模型和 API Key，避免把语言模型密钥发送给语音服务。后端不会自动拼接接口路径。
+ASR、TTS 与文本 LLM 可分别配置服务商、服务地址、请求接口、模型和 API Key，避免把语言模型密钥发送给语音服务。服务地址和请求接口都由用户填写。
+
+### Xiaomi MiMo V2.5
+
+后端会在服务商填写 `xiaomimimo`，或服务地址使用 `*.xiaomimimo.com` 时自动启用 MiMo 协议适配：
+
+- 鉴权使用 `api-key` 请求头。
+- ASR 将 ESP32 PCM 封装为 WAV，再通过 Base64 `input_audio` 发送。
+- TTS 使用 `assistant` 消息传入待播文本，解析响应中的 Base64 WAV，并重采样为 ESP32 使用的 16kHz PCM。
+
+推荐配置：
+
+| 类型 | 模型 | 请求接口 |
+|---|---|---|
+| ASR | `mimo-v2.5-asr` | `/v1/chat/completions` |
+| TTS | `mimo-v2.5-tts` | `/v1/chat/completions` |
+
+TTS 音色可填写 `mimo_default`、`冰糖`、`茉莉`、`苏打`、`白桦` 等官方 Voice ID。
+
+TTS 播放音量默认为 `0.25`，用于避免 MAX98357A 在语音峰值时过载失真，可在模型配置中按 `0.05-1` 调整。控制中心的“播放 TTS 测试语音”可绕过 ASR 和语言模型，单独验证合成与扬声器播放。
+
+## 电脑音频输出
+
+系统设置中的语音输出设备可设为 `browser`。该模式下 ESP32 继续上传麦克风 PCM，TTS 结果由控制中心网页播放到 Windows 默认音频设备；如果蓝牙音响已设为 Windows 默认输出，声音会从蓝牙音响播放。每次页面重新打开后，需要点击顶部“启用电脑播放”以授予浏览器音频权限。旁边的音量按钮可实时调整网页播放音量，设置保存在当前浏览器中。
 
 ## 调试顺序
 
@@ -98,5 +122,6 @@ ASR、TTS 与文本 LLM 可分别配置服务商、完整请求接口、模型�
 - `GET /api/voice/status`
 - `POST /api/voice/test-tone`
 - `POST /api/voice/capture`，请求体：`{"enabled": true}`
+- `POST /api/voice/manual-recording`，请求体 `{"enabled": true}` 开始硬件麦克风录音，`{"enabled": false}` 停止并提交 ASR、语言模型和 TTS 处理。处理结果可从 `/api/voice/status` 的 `manualResult` 读取。
 
 设备控制仍经过原有 `aiAgent -> decisionValidator -> executor`，语音层不能绕过动作校验。

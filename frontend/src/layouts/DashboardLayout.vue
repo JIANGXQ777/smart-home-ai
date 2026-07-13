@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { LayoutDashboard, MessageCircle, Cpu, Radio, BrainCircuit, Settings, Moon, Sun, RefreshCw } from '@lucide/vue'
 import { useSystemStore } from '../stores/system'
+import ComputerAudioPlayer from '../components/ComputerAudioPlayer.vue'
 
 const system = useSystemStore()
 const route = useRoute()
@@ -32,6 +33,7 @@ onBeforeUnmount(system.stopPolling)
       <header class="topbar">
         <div><small>SMART HOME / {{ route.meta.title }}</small><h1>{{ route.meta.title }}</h1></div>
         <div class="top-actions">
+          <ComputerAudioPlayer />
           <button class="icon-btn" @click="system.refresh" aria-label="刷新状态"><RefreshCw :size="18" :class="{spin:system.loading}"/></button>
           <button class="icon-btn" @click="dark=!dark" :aria-label="dark?'切换浅色主题':'切换深色主题'"><Sun v-if="dark" :size="18"/><Moon v-else :size="18"/></button>
         </div>

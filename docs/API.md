@@ -17,7 +17,11 @@
 | GET | `/api/events` | 获取最近的持久化设备执行记录 |
 | GET | `/api/voice/status` | 获取硬件语音连接、VAD 和处理状态 |
 | POST | `/api/voice/capture` | 启用或暂停 ESP32 麦克风上传 |
+| POST | `/api/voice/manual-recording` | 开始或结束一次由页面控制的硬件麦克风录音，请求体为 `{"enabled": true/false}` |
 | POST | `/api/voice/test-tone` | 在 MAX98357A 扬声器播放测试音 |
+| POST | `/api/voice/test-speech` | 使用当前 TTS 配置合成并播放测试语音 |
+| GET | `/api/voice/browser-audio` | 获取等待电脑播放的最新 WAV 音频 |
+| POST | `/api/voice/browser-audio/:id/finished` | 通知后端电脑播放结束并恢复麦克风采集 |
 | POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和建议动作 |
 | POST | `/api/execute` | 用户确认后执行设备动作 |
 | GET/POST | `/api/config` | 读取或保存运行配置 |
@@ -319,10 +323,11 @@ curl -X POST http://localhost:5000/api/execute \
     "asr": {
       "enabled": true,
       "provider": "openai-compatible",
-      "baseUrl": "https://api.example.com/v1/audio/transcriptions",
+      "baseUrl": "https://api.example.com",
       "apiKey": "your_api_key",
       "model": "gpt-4o-mini-transcribe",
       "settings": {
+        "endpointPath": "/v1/audio/transcriptions",
         "language": "zh",
         "timeoutMs": 30000
       }
@@ -331,7 +336,9 @@ curl -X POST http://localhost:5000/api/execute \
 }
 ```
 
-`baseUrl` 保存的是完整请求接口，后端不会自动追加路径。例如语言模型可填写 `/v1/chat/completions`，ASR/TTS 则填写各服务商文档给出的完整接口。模型配置保存后立即生效，不需要重启服务。环境变量中的旧模型配置仅在数据库记录首次创建时导入。
+`baseUrl` 保存服务地址，`settings.endpointPath` 保存请求接口，两者都由用户填写。例如服务地址可填写 `https://api.xiaomimimo.com`，请求接口填写 `/v1/chat/completions`。后端只负责连接这两部分，不会预置或追加固定业务路径。模型配置保存后立即生效，不需要重启服务。
+
+当 `provider` 为 `xiaomimimo`，或服务地址属于 `xiaomimimo.com` 时，ASR/TTS 自动使用 Xiaomi MiMo V2.5 的 `api-key`、Base64 音频和 Chat Completions 消息协议；其他服务商继续使用 OpenAI Audio 兼容协议。
 
 ## 设备管理
 

@@ -176,7 +176,8 @@ APP_MODE=demo
 DATABASE_PATH=./data/smart-home.db
 LLM_ENABLED=true
 LLM_API_KEY=your_api_key
-LLM_ENDPOINT=https://your-provider.example/v1/chat/completions
+LLM_BASE_URL=https://your-provider.example
+LLM_ENDPOINT_PATH=/v1/chat/completions
 LLM_MODEL=your-model-name
 LLM_TIMEOUT_MS=15000
 
