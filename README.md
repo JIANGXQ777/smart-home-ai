@@ -33,7 +33,7 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
 当前已经跑通的能力：
 
-- Node.js 后端通过 USB 串口调用 ESP32
+- ESP32 通过局域网 WebSocket 主动连接 Node.js 后端，USB 串口自动兜底
 - ESP32 发射真实红外码控制旧家电
 - DHT22 温湿度实时读取
 - 控制台实时展示温度、湿度、时间、系统状态
@@ -109,7 +109,7 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
 ## 当前控制台能力
 
-网页控制台当前支持：
+控制台已使用 `Vue 3 + Vite + Pinia + Vue Router` 重构，当前支持：
 
 - 实时温度
 - 实时湿度
@@ -120,6 +120,13 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 - ESP32 RSSI / IP / 硬件状态
 - 已配对设备状态展示
 - 快捷控制入口
+- AI 对话与动作确认
+- 设备定义管理
+- 分温度红外码学习
+- Demo / Hybrid / Hardware 运行模式
+- ESP32-S3 双向 PCM 语音终端
+- 后端 VAD、语音识别、AI 决策和语音合成
+- 深色、浅色主题与移动端布局
 
 ## 设备模型
 
@@ -142,6 +149,8 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
 ### 1. 安装依赖
 
+需要 Node.js 20 或更高版本。
+
 ```bash
 npm install
 ```
@@ -160,29 +169,43 @@ Windows PowerShell：
 Copy-Item .env.example .env
 ```
 
-按需编辑 `.env`：
+按需编辑 `.env`。模型相关变量只用于 SQLite 首次初始化，服务启动后推荐在控制中心的“模型配置”页面管理：
 
 ```env
+APP_MODE=demo
+DATABASE_PATH=./data/smart-home.db
 LLM_ENABLED=true
 LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://your-openai-compatible-base-url/v1
+LLM_ENDPOINT=https://your-provider.example/v1/chat/completions
 LLM_MODEL=your-model-name
 LLM_TIMEOUT_MS=15000
 
 ESP32_ENABLED=true
+ESP32_TRANSPORT=auto
+ESP32_WS_PATH=/ws/esp32
+ESP32_WS_TOKEN=generate-a-random-token-at-least-32-characters
 SERIAL_PORT=COM3
 SERIAL_BAUD_RATE=115200
 ```
 
-如果暂时不启用大模型，可以设置：
+首次启动后可以在“模型配置”中分别启用或停用语言模型、ASR 和 TTS；保存后立即生效，不需要重启。
+
+如果首次初始化时暂时不启用大模型，可以设置：
 
 ```env
 LLM_ENABLED=false
 ```
 
-### 3. 启动后端
+运行模式说明：
+
+- `demo`：规则决策、模拟环境和模拟设备执行
+- `hybrid`：LLM 决策，可选择模拟执行或 ESP32
+- `hardware`：LLM 决策和 ESP32 真实红外控制
+
+### 3. 构建并启动
 
 ```bash
+npm run build
 npm start
 ```
 
@@ -192,13 +215,16 @@ npm start
 http://localhost:5000
 ```
 
-### 4. 打开前端控制台
+### 4. 前端开发模式
 
-直接打开：
+分别启动后端和 Vite：
 
-```text
-frontend/index.html
+```bash
+npm run dev:backend
+npm run dev:frontend
 ```
+
+开发页面地址为 `http://localhost:5173`，生产页面由后端在 `http://localhost:5000` 提供。
 
 ### 5. Windows 一键启动
 
@@ -216,10 +242,35 @@ npm run launch
 
 这个脚本会：
 
-- 检查后端是否已经运行
-- 如果没有运行，就自动启动 `npm start`
+- 构建 Vue 前端
+- 只停止当前项目的旧后端进程
+- 后台启动 Node.js 服务
 - 等待后端就绪
-- 自动打开 `frontend/index.html`
+- 自动打开 `http://localhost:5000`
+
+## 数据持久化
+
+设备定义、红外码、设备推测状态、执行事件，以及 LLM、ASR、TTS 模型配置统一保存在 SQLite：
+
+```text
+data/smart-home.db
+```
+
+首次升级时，后端会自动将现有 `data/devices.json` 和 `data/ir_codes.json` 导入数据库，并将 `.env` 中已有的模型配置写入 `model_configs` 表。导入只执行一次，后续以数据库配置为准。
+
+数据库位置可通过 `DATABASE_PATH` 修改。运行数据和数据库文件已加入 `.gitignore`，仓库只保留 `data/*.example.json` 示例。
+
+## 服务器部署
+
+单家庭、单教室或单实例部署推荐继续使用 SQLite，并将 `data/` 挂载到持久化磁盘。仓库提供了 `Dockerfile` 和 `docker-compose.yml`：
+
+```bash
+docker compose up -d --build
+```
+
+Docker Desktop 下无法直接使用 Windows 的 `COM3`，Compose 默认强制使用 WebSocket。需要让局域网 ESP32 直连时，将 `DOCKER_BIND_ADDRESS` 设置为 `0.0.0.0`；部署到公网服务器并使用反向代理时改为 `127.0.0.1`。
+
+公网部署必须放在 HTTPS/WSS 反向代理之后并增加访问认证，不能直接暴露控制 API。详细方案见 [服务器部署建议](docs/DEPLOYMENT.md)。需要多用户或多实例时，再将数据层迁移到 PostgreSQL。
 
 ## ESP32 固件
 
@@ -231,18 +282,28 @@ npm run launch
 
 - [firmware/README.md](firmware/README.md)
 
-当前固件提供的核心接口：
+当前固件通过 WebSocket 和 USB 串口共用的 JSON 协议提供：
 
-- `GET /health`
-- `POST /ir/send`
-- `POST /ir/power`
+- `health`：读取硬件与温湿度状态
+- `ir_send`：发射指定协议的红外码
+- `ir_learn`：捕获遥控器红外码
+- 二进制 PCM：INMP441 采集与 MAX98357A 播放
+
+N16R8 音频固件编译：
+
+```bash
+npm run firmware:compile
+```
+
+语音接线、协议和调试步骤见 [硬件实时语音说明](docs/VOICE.md)。
 
 当前推荐的连接方式是：
 
-- 后端通过 USB 串口直连 ESP32
-- 后续可通过 WebSocket 升级为局域网/云连接
+- ESP32 通过 Wi-Fi 主动连接后端的 `/ws/esp32`
+- 后端优先使用 WebSocket，网络不可用时自动使用 USB 串口
+- 每条网络命令通过 `requestId` 匹配响应
 
-这意味着演示时 USB 线连接即可通信，稳定可靠。线上部署时只需更换通信模块。
+网络配置、令牌设置和烧录步骤见 [ESP32 网络连接说明](docs/ESP32_NETWORK.md)。
 
 ## API 概览
 
@@ -284,11 +345,17 @@ npm run launch
 smart-home-ai/
 ├── backend/
 │   ├── aiAgent.js
+│   ├── database.js
+│   ├── commandEventStore.js
 │   ├── decisionValidator.js
+│   ├── deviceStore.js
 │   ├── devices.js
 │   ├── esp32Client.js
 │   ├── executor.js
+│   ├── irCodeStore.js
 │   ├── llmClient.js
+│   ├── routes/
+│   ├── services/
 │   ├── ruleAgent.js
 │   └── server.js
 ├── firmware/
@@ -296,9 +363,12 @@ smart-home-ai/
 │   └── esp32_ir_bridge/
 │       └── esp32_ir_bridge.ino
 ├── frontend/
-│   ├── app.js
 │   ├── index.html
-│   └── style.css
+│   ├── src/
+│   └── vite.config.js
+├── data/
+│   ├── devices.example.json
+│   └── ir_codes.example.json
 ├── docs/
 │   ├── API.md
 │   ├── TEAM_DEVELOPMENT_GUIDE.md
@@ -306,6 +376,8 @@ smart-home-ai/
 │   ├── V2_DEVELOPMENT_PLAN.md
 │   └── V3_HARDWARE_NOTES.md
 ├── .env.example
+├── Dockerfile
+├── docker-compose.yml
 ├── package.json
 └── README.md
 ```

@@ -1,596 +1,382 @@
-const API_BASE = '';
-const STATE_REFRESH_MS = 5000;
+// ===== Smart Home AI Console — Alpine.js App =====
 
-const deviceNameMap = {
-  bedroom_ac: '卧室空调',
-  livingroom_fan: '客厅风扇',
-  livingroom_light: '客厅灯'
-};
+const LOC = { bedroom:'卧室', livingroom:'客厅', kitchen:'厨房', study:'书房', balcony:'阳台', hallway:'走廊', dining:'餐厅', other:'房间' };
+const TYPES = { air_conditioner:'空调', fan:'风扇', light:'灯', tv:'电视', other:'设备' };
+const TYPE_SUFFIX = { air_conditioner:'ac', fan:'fan', light:'light', tv:'tv', other:'device' };
+const ACTION_LABEL = { turn_on:'打开', turn_off:'关闭', set_temperature:'调温' };
+const ACTION_LABEL_SMALL = { turn_on:'开关', turn_off:'开关', set_temperature:'调温' };
 
-const commandTextMap = {
-  turn_on: '打开',
-  turn_off: '关闭',
-  set_temperature: '设置温度'
-};
+document.addEventListener('alpine:init', () => {
+  Alpine.data('consoleApp', () => ({
+    // ---- 状态 ----
+    env: { temperature: '--', humidity: '--', time: '--:--', source: '' },
+    sys: {
+      aiClass: 'pill-warn', aiLabel: 'AI 检测中', backendClass: 'pill-offline', backendLabel: '后端未连接',
+      hwClass: 'pill-warn', hwLabel: '硬件状态未知', refreshedAt: '', items: []
+    },
+    chat: {
+      messages: [], input: '', thinking: false, loading: false, executing: false,
+      reply: '', action: null, result: { show: false, ok: true, text: '' }
+    },
+    devices: {
+      list: [], modalOpen: false, modalMode: 'add', modalEditingId: null,
+      form: { type: 'air_conditioner', location: 'bedroom', name: '', id: 'bedroom_ac' }
+    },
+    learn: {
+      deviceId: '', command: '', loading: false, result: null, codes: {}
+    },
+    toasts: [],
+    error: '',
+    lastActivity: '',
+    settingsOpen: false,
+    cfg: {
+      llmEnabled: true, llmModel: '', llmApiKey: '', llmBaseUrl: '', llmTimeoutMs: 15000, llmMaxTokens: 1024,
+      esp32Enabled: true, serialPort: '', serialBaudRate: 115200,
+      msg: '', msgOk: true
+    },
 
-const uiState = {
-  chatLoading: false,
-  executeLoading: false
-};
+    // ---- 初始化 ----
+    async init() {
+      await Promise.all([this.fetchState(), this.loadConfig()]);
+      await this.loadLearnedCodes();
+      setInterval(() => this.fetchState(), 5000);
+    },
 
-let pendingAction = null;
+    // ---- API ----
+    async api(url, opts = {}) {
+      try {
+        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (e) {
+        this.error = `请求失败: ${e.message}`;
+        setTimeout(() => this.error = '', 6000);
+        return null;
+      }
+    },
 
-document.addEventListener('DOMContentLoaded', () => {
-  setupEventListeners();
-  updateControls();
-  loadState();
-  window.setInterval(loadState, STATE_REFRESH_MS);
+    async fetchState() {
+      const data = await this.api('/api/state');
+      if (!data) {
+        this.sys.backendClass = 'pill-offline'; this.sys.backendLabel = '后端离线';
+        return;
+      }
+      const st = data.system;
+      // 环境
+      if (data.environment) {
+        this.env.temperature = data.environment.temperature;
+        this.env.humidity = data.environment.humidity;
+        this.env.time = data.environment.time;
+        this.env.source = data.environment.source;
+      }
+      // 系统
+      this.sys.backendClass = st.backendConnected ? 'pill-online' : 'pill-offline';
+      this.sys.backendLabel = st.backendConnected ? '后端已连接' : '后端离线';
+      const llm = st.llmStatus;
+      if (!llm) { this.sys.aiClass = 'pill-warn'; this.sys.aiLabel = 'AI 检测中'; }
+      else if (llm.reachable && !llm.authError) { this.sys.aiClass = 'pill-online'; this.sys.aiLabel = `AI 就绪 (${llm.model||'OK'})`; }
+      else if (llm.reachable && llm.authError) { this.sys.aiClass = 'pill-offline'; this.sys.aiLabel = 'API Key 无效'; }
+      else { this.sys.aiClass = 'pill-offline'; this.sys.aiLabel = llm.reason || 'AI 不可用'; }
+
+      if (!st.esp32Configured) { this.sys.hwClass = 'pill-warn'; this.sys.hwLabel = '硬件未配置'; }
+      else if (st.esp32Connected) { this.sys.hwClass = 'pill-online'; this.sys.hwLabel = '硬件在线'; }
+      else { this.sys.hwClass = 'pill-offline'; this.sys.hwLabel = '硬件离线'; }
+
+      this.sys.refreshedAt = new Date(st.refreshedAt).toLocaleTimeString('zh-CN', { hour12: false });
+      this.sys.items = [
+        { label: 'AI 模型', value: this._llmDetail(st) },
+        { label: '后端连接', value: st.backendConnected ? '正常' : '异常' },
+        { label: '硬件', value: this._hwDetail(st) },
+        { label: '硬件细节', value: this._hwExtra(st) },
+      ];
+      // 设备
+      this.devices.list = (data.devices || []).filter(d => d.paired);
+    },
+
+    // ---- 对话 ----
+    async sendMessage() {
+      const msg = this.chat.input.trim();
+      if (!msg || this.chat.loading) return;
+      this.chat.messages.push({ role: 'user', text: msg });
+      this.chat.input = '';
+      this.chat.reply = ''; this.chat.action = null; this.chat.result.show = false;
+      this.chat.thinking = true; this.chat.loading = true;
+      this.$nextTick(() => { const el = this.$refs.chatStream; if (el) el.scrollTop = el.scrollHeight; });
+
+      const data = await this.api('/api/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
+      this.chat.thinking = false; this.chat.loading = false;
+
+      if (!data) {
+        this.chat.messages.push({ role: 'assistant', text: '抱歉，AI 助手暂时无法响应。' });
+        return;
+      }
+
+      if (data.needConfirm && data.action) {
+        this.chat.reply = data.reply;
+        this.chat.action = data.action;
+      } else {
+        this.chat.messages.push({ role: 'assistant', text: data.reply || '我暂时没有可展示的回复。' });
+      }
+      this.$nextTick(() => { const el = this.$refs.chatStream; if (el) el.scrollTop = el.scrollHeight; });
+    },
+
+    quickSend(msg) { this.chat.input = msg; this.sendMessage(); },
+
+    async quickToggle(deviceId, command) {
+      const data = await this.api('/api/execute', {
+        method: 'POST', body: JSON.stringify({ deviceId, command })
+      });
+      if (!data) return;
+      this.toast(data.success, data.message || (data.success ? '执行成功' : '执行失败'));
+      this.lastActivity = `${this.deviceName(deviceId)} ${ACTION_LABEL[command] || command} · ${new Date().toLocaleTimeString('zh-CN',{hour12:false})}`;
+      if (data.success) await this.fetchState();
+    },
+
+    async confirmExecute() {
+      const a = this.chat.action;
+      if (!a || this.chat.executing) return;
+      this.chat.executing = true;
+      const data = await this.api('/api/execute', {
+        method: 'POST', body: JSON.stringify({ deviceId: a.deviceId, command: a.command, value: a.value })
+      });
+      this.chat.executing = false;
+      if (!data) return;
+      this.chat.result = { show: true, ok: data.success, text: data.message || (data.success ? '执行成功' : '执行失败') };
+      this.chat.messages.push({ role: 'assistant', text: data.message || (data.success ? '已执行。' : '执行失败。') });
+      this.lastActivity = `${this.actionLabel()} · ${new Date().toLocaleTimeString('zh-CN',{hour12:false})}`;
+      this.chat.reply = ''; this.chat.action = null;
+      if (data.success) await this.fetchState();
+      setTimeout(() => this.chat.result.show = false, 4000);
+    },
+
+    actionLabel() {
+      const a = this.chat.action;
+      if (!a) return '';
+      const dev = this.devices.list.find(d => d.id === a.deviceId);
+      const name = dev ? dev.name : a.deviceId;
+      if (a.command === 'set_temperature') return `${name} / 设置为 ${a.value}°C`;
+      return `${name} / ${ACTION_LABEL[a.command] || a.command}`;
+    },
+
+    // ---- 设备管理 ----
+    openDeviceModal(deviceId) {
+      const dev = deviceId ? this.devices.list.find(d => d.id === deviceId) : null;
+      this.devices.modalEditingId = deviceId;
+      this.devices.modalMode = dev ? 'edit' : 'add';
+
+      if (dev) {
+        const locKey = Object.entries(LOC).find(([,v]) => v === dev.location)?.[0] || 'other';
+        this.devices.form = { type: dev.type, location: locKey, name: dev.name, id: dev.id };
+      } else {
+        this.devices.form = { type: 'air_conditioner', location: 'bedroom', name: '', id: '' };
+        this._genDeviceId();
+      }
+      this.devices.modalOpen = true;
+    },
+
+    onDeviceFormTypeChange() {
+      if (this.devices.modalMode === 'edit') return;
+      this._genDeviceId();
+      if (!this.devices.form.name || this.devices.form._autoName) {
+        this.devices.form.name = LOC[this.devices.form.location] + TYPES[this.devices.form.type];
+        this.devices.form._autoName = true;
+      }
+    },
+
+    onDeviceFormLocationChange() {
+      if (this.devices.modalMode === 'edit') return;
+      this._genDeviceId();
+      if (this.devices.form._autoName !== false) {
+        this.devices.form.name = LOC[this.devices.form.location] + TYPES[this.devices.form.type];
+        this.devices.form._autoName = true;
+      }
+    },
+
+    _genDeviceId() {
+      if (this.devices.modalMode === 'edit') return;
+      const loc = this.devices.form.location;
+      const suf = TYPE_SUFFIX[this.devices.form.type] || 'device';
+      let id = `${loc}_${suf}`;
+      let n = 2;
+      while (this.devices.list.some(d => d.id === id)) id = `${loc}_${suf}_${n++}`;
+      this.devices.form.id = id;
+    },
+
+    async saveDevice() {
+      const f = this.devices.form;
+      if (!f.name.trim()) return;
+      const isEdit = this.devices.modalMode === 'edit';
+      const url = isEdit ? `/api/devices/${this.devices.modalEditingId}` : '/api/devices';
+      const method = isEdit ? 'PUT' : 'POST';
+      const body = isEdit
+        ? { name: f.name.trim(), location: LOC[f.location] || '', type: f.type }
+        : { id: f.id, name: f.name.trim(), location: LOC[f.location] || '', type: f.type };
+
+      const data = await this.api(url, { method, body: JSON.stringify(body) });
+      if (data && data.success) {
+        this.devices.modalOpen = false;
+        await this.fetchState();
+      }
+    },
+
+    async deleteDevice(deviceId) {
+      if (!confirm(`确定删除「${this.deviceName(deviceId)}」？不可撤销。`)) return;
+      const data = await this.api(`/api/devices/${deviceId}`, { method: 'DELETE' });
+      if (data && data.success) await this.fetchState();
+    },
+
+    deviceName(id) {
+      const dev = this.devices.list.find(d => d.id === id);
+      return dev ? dev.name : id;
+    },
+    typeLabel(t) { return TYPES[t] || t; },
+    actionLabelSmall(a) { return ACTION_LABEL_SMALL[a] || a; },
+
+    // ---- 红外学习 ----
+    learnCommands() {
+      const dev = this.devices.list.find(d => d.id === this.learn.deviceId);
+      return dev ? dev.actions || [] : [];
+    },
+
+    onLearnDeviceChange() {
+      this.learn.command = '';
+      this.learn.result = null;
+    },
+
+    async startLearning() {
+      if (this.learn.loading || !this.learn.deviceId || !this.learn.command) return;
+      this.learn.loading = true;
+      this.learn.result = null;
+
+      const data = await this.api('/api/ir-learn/start', { method: 'POST' });
+      this.learn.loading = false;
+
+      if (data && data.success) {
+        this.learn.result = data.learned;
+      } else {
+        this.learn.result = null;
+        this.toast(false, data?.message || '红外学习失败');
+      }
+    },
+
+    async saveLearnedCode() {
+      if (!this.learn.result) return;
+      const data = await this.api('/api/ir-learn/save', {
+        method: 'POST',
+        body: JSON.stringify({ deviceId: this.learn.deviceId, command: this.learn.command, learned: this.learn.result })
+      });
+      if (data && data.success) {
+        this.toast(true, `已保存 ${this.deviceName(this.learn.deviceId)} / ${this.actionLabelSmall(this.learn.command)}`);
+        this.learn.result = null;
+        this.learn.command = '';
+        await this.loadLearnedCodes();
+        await this.fetchState();
+      }
+    },
+
+    async loadLearnedCodes() {
+      const data = await this.api('/api/ir-learn/codes');
+      if (data) this.learn.codes = data;
+    },
+
+    async deleteLearnedCode(deviceId, command) {
+      const data = await this.api('/api/ir-learn/codes', {
+        method: 'DELETE', body: JSON.stringify({ deviceId, command })
+      });
+      if (data && data.success) {
+        await this.loadLearnedCodes();
+        await this.fetchState();
+      }
+    },
+
+    // ---- Toast ----
+    _nextToastId: 1,
+    toast(ok, text) {
+      const id = this._nextToastId++;
+      this.toasts.push({ _id: id, show: true, ok, text });
+      setTimeout(() => {
+        const t = this.toasts.find(t2 => t2._id === id);
+        if (t) t.show = false;
+        setTimeout(() => {
+          this.toasts = this.toasts.filter(t2 => t2.show);
+        }, 400);
+      }, 3000);
+    },
+
+    // ---- 格式化 ----
+    fmtTemp() {
+      const v = this.env.temperature;
+      if (typeof v !== 'number') return '--°C';
+      return Number.isInteger(v) ? `${v}°C` : `${v.toFixed(1)}°C`;
+    },
+    fmtHumidity() {
+      const v = this.env.humidity;
+      if (typeof v !== 'number') return '--%';
+      return Number.isInteger(v) ? `${v}%` : `${v.toFixed(1)}%`;
+    },
+
+    // ---- 配置 ----
+    async loadConfig() {
+      const data = await this.api('/api/config');
+      if (!data) return;
+      this.cfg.llmEnabled = data.llmEnabled;
+      this.cfg.llmModel = data.llmModel;
+      this.cfg.llmBaseUrl = data.llmBaseUrl;
+      this.cfg.llmTimeoutMs = data.llmTimeoutMs;
+      this.cfg.llmMaxTokens = data.llmMaxTokens;
+      this.cfg.esp32Enabled = data.esp32Enabled;
+      this.cfg.serialPort = data.serialPort;
+      this.cfg.serialBaudRate = data.serialBaudRate;
+    },
+    async saveConfig() {
+      const body = {
+        llmEnabled: this.cfg.llmEnabled,
+        llmModel: this.cfg.llmModel,
+        llmBaseUrl: this.cfg.llmBaseUrl,
+        llmTimeoutMs: Number(this.cfg.llmTimeoutMs),
+        llmMaxTokens: Number(this.cfg.llmMaxTokens),
+        esp32Enabled: this.cfg.esp32Enabled,
+        serialPort: this.cfg.serialPort,
+        serialBaudRate: Number(this.cfg.serialBaudRate)
+      };
+      if (this.cfg.llmApiKey) body.llmApiKey = this.cfg.llmApiKey;
+      const data = await this.api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+      if (data?.success) {
+        this.cfg.msg = '配置已保存，立即生效。';
+        this.cfg.msgOk = true;
+        this.cfg.llmApiKey = '';
+        await this.fetchState();
+      } else {
+        this.cfg.msg = data?.message || '保存失败';
+        this.cfg.msgOk = false;
+      }
+      setTimeout(() => this.cfg.msg = '', 4000);
+    },
+
+    // ---- 系统详情辅助 ----
+    _llmDetail(st) {
+      if (!st.aiDecisionEnabled) return '未启用';
+      const s = st.llmStatus;
+      if (!s) return '检测中…';
+      if (s.reachable && !s.authError) return `已连接 (${s.model||'OK'})`;
+      if (s.reachable && s.authError) return 'API Key 无效';
+      return s.reason || '无法连接';
+    },
+    _hwDetail(st) {
+      if (!st.esp32Configured) return '未配置';
+      if (!st.esp32Connected || !st.esp32) return '离线';
+      const c = st.esp32Connection;
+      return `在线 · ${c.serialPath||''} ${c.baudRate||''}bps`;
+    },
+    _hwExtra(st) {
+      if (!st.esp32Configured) return '未启用硬件桥接';
+      if (!st.esp32Connected || !st.esp32) return '未获取到健康状态';
+      const parts = [];
+      if (st.esp32.serviceStarted) parts.push('IR API 已启动');
+      if (st.esp32.sensorReady) parts.push('DHT22 就绪');
+      if (st.esp32.wifiConnected) parts.push('Wi-Fi 正常');
+      if (st.esp32.hostname) parts.push(st.esp32.hostname);
+      return parts.length > 0 ? parts.join(' / ') : '已连接';
+    },
+  }));
 });
-
-function setupEventListeners() {
-  document.getElementById('send-btn').addEventListener('click', sendMessage);
-  document.getElementById('confirm-btn').addEventListener('click', confirmExecute);
-
-  document.getElementById('user-input').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
-  });
-
-  document.getElementById('user-input').addEventListener('input', () => {
-    updateControls();
-  });
-
-  document.querySelectorAll('.quick-prompt').forEach((button) => {
-    button.addEventListener('click', () => {
-      const input = document.getElementById('user-input');
-      input.value = button.dataset.prompt || '';
-      input.focus();
-      sendMessage();
-    });
-  });
-}
-
-async function loadState() {
-  try {
-    const response = await fetch(`${API_BASE}/api/state`);
-    if (!response.ok) {
-      throw new Error(`state request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    renderEnvironment(data.environment);
-    renderDevices(data.devices || []);
-    renderSystemStatus(data.system);
-    setConnectionStatus(true);
-    showStatus('');
-  } catch (error) {
-    console.error('加载状态失败:', error);
-    setConnectionStatus(false);
-    renderEnvironment(null);
-    renderDevices([]);
-    renderSystemStatus(null);
-    showStatus('无法连接到后端服务，请确认 Node.js 服务已经启动。');
-  }
-}
-
-function renderEnvironment(environment) {
-  const container = document.getElementById('env-info');
-
-  if (!environment) {
-    container.innerHTML = '<div class="empty-state">暂无环境数据</div>';
-    return;
-  }
-
-  const sourceNote = environment.source === 'esp32' ? '来自 ESP32 + DHT22' : '当前为模拟值';
-
-  container.innerHTML = [
-    createEnvItem('温度', `${formatNumber(environment.temperature)}°C`, sourceNote),
-    createEnvItem('湿度', `${formatNumber(environment.humidity)}%`, sourceNote),
-    createEnvItem('时间', environment.time || '--:--', '由后端实时刷新')
-  ].join('');
-}
-
-function createEnvItem(label, value, note = '') {
-  return `
-    <div class="env-item">
-      <span class="label">${label}</span>
-      <span class="value">${value}</span>
-      ${note ? `<span class="note">${note}</span>` : ''}
-    </div>
-  `;
-}
-
-function renderSystemStatus(system) {
-  const aiStatus = document.getElementById('ai-status');
-  const connectionStatus = document.getElementById('connection-status');
-  const hardwareStatus = document.getElementById('hardware-status');
-  const refreshText = document.getElementById('refresh-text');
-  const systemPanel = document.getElementById('system-status');
-
-  if (!system) {
-    aiStatus.textContent = 'AI 状态未知';
-    aiStatus.className = 'status-pill warn';
-    connectionStatus.textContent = '后端未连接';
-    connectionStatus.className = 'status-pill offline';
-    hardwareStatus.textContent = '硬件状态未知';
-    hardwareStatus.className = 'status-pill warn';
-    refreshText.textContent = '刷新失败';
-    systemPanel.innerHTML = '<div class="empty-state">暂无系统状态</div>';
-    return;
-  }
-
-  const llmStatus = system.llmStatus;
-  if (!llmStatus) {
-    aiStatus.textContent = 'AI 检测中...';
-    aiStatus.className = 'status-pill warn';
-  } else if (llmStatus.reachable && !llmStatus.authError) {
-    aiStatus.textContent = llmStatus.model ? `AI 已就绪 (${llmStatus.model})` : 'AI 已就绪';
-    aiStatus.className = 'status-pill online';
-  } else if (llmStatus.reachable && llmStatus.authError) {
-    aiStatus.textContent = 'AI API Key 无效';
-    aiStatus.className = 'status-pill offline';
-  } else {
-    aiStatus.textContent = llmStatus.reason || 'AI 不可用';
-    aiStatus.className = 'status-pill offline';
-  }
-
-  connectionStatus.textContent = system.backendConnected ? '后端已连接' : '后端未连接';
-  connectionStatus.className = `status-pill ${system.backendConnected ? 'online' : 'offline'}`;
-
-  if (!system.esp32Configured) {
-    hardwareStatus.textContent = '硬件未配置';
-    hardwareStatus.className = 'status-pill warn';
-  } else if (system.esp32Connected) {
-    hardwareStatus.textContent = '硬件在线';
-    hardwareStatus.className = 'status-pill online';
-  } else {
-    hardwareStatus.textContent = '硬件离线';
-    hardwareStatus.className = 'status-pill offline';
-  }
-
-  refreshText.textContent = `最近刷新：${formatRefreshTime(system.refreshedAt)}`;
-
-  systemPanel.innerHTML = [
-    createSystemItem('AI 模型', formatLlmStatus(system)),
-    createSystemItem('后端连接', system.backendConnected ? '正常' : '异常'),
-    createSystemItem('硬件', formatEsp32Status(system)),
-    createSystemItem('发现方式', formatEsp32Discovery(system)),
-    createSystemItem('硬件细节', formatHardwareDetails(system)),
-    createSystemItem('最近刷新', formatRefreshTime(system.refreshedAt))
-  ].join('');
-}
-
-function createSystemItem(label, value) {
-  return `
-    <div class="system-item">
-      <span class="label">${label}</span>
-      <span class="value">${value}</span>
-    </div>
-  `;
-}
-
-function formatLlmStatus(system) {
-  if (!system.aiDecisionEnabled) {
-    return '未启用';
-  }
-
-  const status = system.llmStatus;
-  if (!status) {
-    return '检测中...';
-  }
-
-  if (status.reachable && !status.authError) {
-    return `已连接 (${status.model || 'OK'})`;
-  }
-
-  if (status.reachable && status.authError) {
-    return 'API Key 无效';
-  }
-
-  return status.reason || '无法连接';
-}
-
-function formatEsp32Status(system) {
-  if (!system.esp32Configured) {
-    return '未配置';
-  }
-
-  if (!system.esp32Connected || !system.esp32) {
-    return '离线';
-  }
-
-  const conn = system.esp32Connection;
-  const parts = ['在线'];
-  if (conn && conn.mode === 'serial' && conn.serialPath) {
-    parts.push(conn.serialPath);
-    parts.push(`${conn.baudRate}bps`);
-  }
-  if (conn && conn.mode === 'http' && conn.baseUrl) {
-    parts.push(conn.baseUrl);
-  }
-
-  return parts.join(' / ');
-}
-
-function formatEsp32Discovery(system) {
-  if (!system?.esp32Configured) {
-    return '未配置';
-  }
-
-  if (!system?.esp32Connected) {
-    return '离线';
-  }
-
-  const conn = system.esp32Connection;
-  if (conn && conn.mode === 'serial') {
-    return conn.connected ? 'USB 串口直连' : '串口断开';
-  }
-  if (conn && conn.mode === 'http') {
-    return 'HTTP 局域网';
-  }
-  return '已连接';
-}
-
-function formatHardwareDetails(system) {
-  if (!system?.esp32Configured) {
-    return '未启用硬件桥接';
-  }
-
-  if (!system.esp32Connected || !system.esp32) {
-    return '尚未获取到硬件健康状态';
-  }
-
-  const details = [];
-
-  if (system.esp32.serviceStarted === true) {
-    details.push('IR API 已启动');
-  }
-  if (system.esp32.sensorReady === true) {
-    details.push('DHT22 就绪');
-  }
-  if (system.esp32.wifiConnected === true) {
-    details.push('Wi-Fi 正常');
-  }
-  if (system.esp32.hostname) {
-    details.push(system.esp32.hostname);
-  }
-
-  return details.length > 0 ? details.join(' / ') : '已连接';
-}
-
-function formatRefreshTime(isoString) {
-  if (!isoString) {
-    return '--:--:--';
-  }
-
-  return new Date(isoString).toLocaleTimeString('zh-CN', {
-    hour12: false
-  });
-}
-
-function renderDevices(devices) {
-  const list = document.getElementById('devices-list');
-  const count = document.getElementById('device-count');
-
-  count.textContent = `${devices.length} 台`;
-
-  if (!devices.length) {
-    list.innerHTML = '<div class="empty-state">暂无设备数据</div>';
-    return;
-  }
-
-  list.innerHTML = devices.map((device) => `
-    <div class="device-item">
-      <div class="device-info">
-        <span class="device-name">${device.name}</span>
-        <span class="device-location">${device.location} / ${formatDeviceType(device.type)}</span>
-        ${renderDeviceDetails(device)}
-      </div>
-      <span class="device-status ${device.status}">${device.status === 'on' ? '已开启' : '已关闭'}</span>
-    </div>
-  `).join('');
-}
-
-function renderDeviceDetails(device) {
-  const details = [];
-
-  if (device.controlType) {
-    details.push(`控制方式：${formatControlType(device.controlType)}`);
-  }
-
-  if (device.stateConfidence) {
-    details.push(`状态来源：${formatStateConfidence(device.stateConfidence)}`);
-  }
-
-  if (device.type === 'air_conditioner' && device.status === 'on' && device.targetTemperature) {
-    details.push(`设定温度：${device.targetTemperature}°C`);
-  }
-
-  if (device.lastCommand) {
-    details.push(`最近命令：${formatCommand(device.lastCommand.command)}`);
-  }
-
-  details.push(`能力：${formatCapabilities(device)}`);
-
-  return details.map((detail) => `<span class="device-meta">${detail}</span>`).join('');
-}
-
-async function sendMessage() {
-  const input = document.getElementById('user-input');
-  const message = input.value.trim();
-
-  if (!message || uiState.chatLoading) {
-    return;
-  }
-
-  setChatLoading(true);
-  showStatus('');
-  hideActionSuggestion();
-  hideExecuteResult();
-  appendMessage('user', message);
-  showThinking('AI 正在结合环境与设备状态生成建议...');
-
-  try {
-    const response = await fetch(`${API_BASE}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ message })
-    });
-
-    if (!response.ok) {
-      throw new Error(`chat request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    setConnectionStatus(true);
-    appendAssistantDecision(data);
-    input.value = '';
-  } catch (error) {
-    console.error('发送消息失败:', error);
-    setConnectionStatus(false);
-    hideReplyArea();
-    appendMessage('assistant', '抱歉，AI 助手暂时无法响应。');
-    showStatus('请求失败，请确认后端服务和大模型配置正常。');
-    pendingAction = null;
-  } finally {
-    setChatLoading(false);
-  }
-}
-
-function appendAssistantDecision(data) {
-  appendMessage('assistant', data.reply || '我暂时没有可展示的回复。');
-
-  if (data.needConfirm && data.action) {
-    pendingAction = data.action;
-    showActionSuggestion(data.action);
-    hideReplyArea();
-  } else {
-    pendingAction = null;
-    hideActionSuggestion();
-    hideReplyArea();
-  }
-}
-
-function showThinking(text) {
-  const replyArea = document.getElementById('reply-area');
-  const replyText = document.getElementById('reply-text');
-
-  replyArea.classList.add('thinking');
-  replyText.textContent = text;
-  replyArea.hidden = false;
-}
-
-function hideReplyArea() {
-  const replyArea = document.getElementById('reply-area');
-  replyArea.classList.remove('thinking');
-  replyArea.hidden = true;
-}
-
-function appendMessage(role, text) {
-  const stream = document.getElementById('chat-stream');
-  const welcome = document.getElementById('welcome-card');
-  const message = document.createElement('div');
-  const label = document.createElement('span');
-  const body = document.createElement('p');
-
-  welcome.hidden = true;
-  message.className = `message-bubble ${role}`;
-  label.className = 'message-label';
-  label.textContent = role === 'user' ? '你' : 'AI';
-  body.textContent = text;
-
-  message.appendChild(label);
-  message.appendChild(body);
-  stream.appendChild(message);
-  stream.scrollTop = stream.scrollHeight;
-}
-
-function showActionSuggestion(action) {
-  const actionDiv = document.getElementById('action-suggestion');
-  const suggestionText = document.getElementById('suggestion-text');
-  const confirmBtn = document.getElementById('confirm-btn');
-
-  suggestionText.textContent = `${formatDeviceName(action.deviceId)} / ${formatAction(action)}`;
-  actionDiv.hidden = false;
-  confirmBtn.hidden = false;
-}
-
-function hideActionSuggestion() {
-  document.getElementById('action-suggestion').hidden = true;
-  document.getElementById('confirm-btn').hidden = true;
-}
-
-async function confirmExecute() {
-  if (!pendingAction || uiState.executeLoading) {
-    return;
-  }
-
-  const { deviceId, command, value } = pendingAction;
-  setExecuteLoading(true);
-  showStatus('');
-
-  try {
-    const response = await fetch(`${API_BASE}/api/execute`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ deviceId, command, value })
-    });
-
-    if (!response.ok) {
-      throw new Error(`execute request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    setConnectionStatus(true);
-    showExecuteResult(data);
-    pendingAction = null;
-    hideActionSuggestion();
-    await loadState();
-  } catch (error) {
-    console.error('执行失败:', error);
-    setConnectionStatus(false);
-    showExecuteResult({
-      success: false,
-      message: '执行失败，请稍后重试。'
-    });
-  } finally {
-    setExecuteLoading(false);
-  }
-}
-
-function showExecuteResult(data) {
-  const resultDiv = document.getElementById('execute-result');
-  const resultText = document.getElementById('result-text');
-
-  resultDiv.classList.remove('success', 'error');
-  resultDiv.classList.add(data.success ? 'success' : 'error');
-  resultText.textContent = data.message || (data.success ? '执行成功。' : '执行失败。');
-  resultDiv.hidden = false;
-}
-
-function hideExecuteResult() {
-  document.getElementById('execute-result').hidden = true;
-}
-
-function setChatLoading(loading) {
-  uiState.chatLoading = loading;
-  updateControls();
-}
-
-function setExecuteLoading(loading) {
-  uiState.executeLoading = loading;
-  updateControls();
-}
-
-function updateControls() {
-  const sendBtn = document.getElementById('send-btn');
-  const confirmBtn = document.getElementById('confirm-btn');
-  const input = document.getElementById('user-input');
-
-  const isBusy = uiState.chatLoading || uiState.executeLoading;
-
-  input.disabled = uiState.chatLoading || uiState.executeLoading;
-  sendBtn.disabled = isBusy || !input.value.trim();
-  confirmBtn.disabled = isBusy;
-
-  sendBtn.textContent = uiState.chatLoading ? '发送中' : '发送';
-  confirmBtn.textContent = uiState.executeLoading ? '执行中' : '确认执行';
-}
-
-function setConnectionStatus(online) {
-  const status = document.getElementById('connection-status');
-  if (!status) {
-    return;
-  }
-
-  status.classList.toggle('online', online);
-  status.classList.toggle('offline', !online);
-  status.classList.remove('warn');
-  status.textContent = online ? '后端已连接' : '后端未连接';
-}
-
-function showStatus(message) {
-  const status = document.getElementById('status-message');
-
-  if (!message) {
-    status.hidden = true;
-    status.textContent = '';
-    return;
-  }
-
-  status.textContent = message;
-  status.hidden = false;
-}
-
-function formatDeviceName(deviceId) {
-  return deviceNameMap[deviceId] || deviceId;
-}
-
-function formatCommand(command) {
-  return commandTextMap[command] || command;
-}
-
-function formatCapabilities(device) {
-  const capabilities = device.capabilities || {};
-  const labels = [];
-
-  if (capabilities.power) {
-    labels.push('开关');
-  }
-  if (capabilities.temperature) {
-    labels.push(`温度 ${capabilities.temperature.min}-${capabilities.temperature.max}°C`);
-  }
-  if (Array.isArray(capabilities.mode) && capabilities.mode.length > 0) {
-    labels.push('模式');
-  }
-  if (Array.isArray(capabilities.fanSpeed) && capabilities.fanSpeed.length > 0) {
-    labels.push('风速');
-  }
-
-  return labels.length > 0 ? labels.join(' / ') : (device.actions || []).map(formatCommand).join(' / ');
-}
-
-function formatControlType(controlType) {
-  return controlType === 'ir' ? '红外' : controlType;
-}
-
-function formatStateConfidence(stateConfidence) {
-  const confidenceMap = {
-    assumed: '系统推测',
-    reported: '设备上报'
-  };
-
-  return confidenceMap[stateConfidence] || stateConfidence;
-}
-
-function formatAction(action) {
-  if (action.command === 'set_temperature') {
-    return `设置为 ${action.value}°C`;
-  }
-
-  return formatCommand(action.command);
-}
-
-function formatDeviceType(type) {
-  const typeMap = {
-    air_conditioner: '空调',
-    fan: '风扇',
-    light: '灯光'
-  };
-
-  return typeMap[type] || type;
-}
-
-function formatNumber(value) {
-  if (typeof value !== 'number') {
-    return '--';
-  }
-
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}

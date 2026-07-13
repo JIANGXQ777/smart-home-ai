@@ -12,9 +12,22 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| GET | `/api/health` | 获取轻量服务和数据库健康状态 |
 | GET | `/api/state` | 获取当前环境、设备与系统状态 |
+| GET | `/api/events` | 获取最近的持久化设备执行记录 |
+| GET | `/api/voice/status` | 获取硬件语音连接、VAD 和处理状态 |
+| POST | `/api/voice/capture` | 启用或暂停 ESP32 麦克风上传 |
+| POST | `/api/voice/test-tone` | 在 MAX98357A 扬声器播放测试音 |
 | POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和建议动作 |
 | POST | `/api/execute` | 用户确认后执行设备动作 |
+| GET/POST | `/api/config` | 读取或保存运行配置 |
+| GET/PUT | `/api/models` | 读取或保存 SQLite 中的 LLM、ASR、TTS 配置 |
+| GET/POST | `/api/devices` | 获取或添加设备 |
+| PUT/DELETE | `/api/devices/:id` | 更新或删除设备 |
+| GET | `/api/device-types` | 获取设备类型预设 |
+| POST | `/api/ir-learn/start` | 开始红外学习 |
+| POST | `/api/ir-learn/save` | 保存学习结果 |
+| GET/DELETE | `/api/ir-learn/codes` | 获取或删除红外码 |
 
 ## 数据模型
 
@@ -32,11 +45,14 @@
 | 字段 | 类型 | 示例 | 说明 |
 |---|---|---|---|
 | `backendConnected` | boolean | `true` | 后端服务是否正常运行 |
+| `appMode` | string | `"demo"` | 当前运行模式：`demo`、`hybrid` 或 `hardware` |
 | `aiDecisionEnabled` | boolean | `true` | 是否启用大模型决策 |
-| `esp32Configured` | boolean | `true` | 是否已配置 ESP32 网关地址 |
-| `esp32Connected` | boolean | `true` | 后端能否访问 ESP32 网关 |
+| `storage` | object | `{ "type": "sqlite", "persistent": true }` | 当前持久化存储摘要 |
+| `esp32Configured` | boolean | `true` | 是否已启用并配置 ESP32 通信 |
+| `esp32Connected` | boolean | `true` | 后端能否通过 WebSocket 或串口访问 ESP32 |
 | `refreshedAt` | string | `"2026-05-09T08:57:00.000Z"` | 状态聚合时间 |
-| `esp32` | object 或 null | `{ "ip": "10.173.149.129" }` | ESP32 健康状态摘要 |
+| `esp32Connection` | object | `{ "mode": "auto", "activeTransport": "websocket" }` | 配置方式和当前实际通信通道 |
+| `esp32` | object 或 null | `{ "transport": "websocket", "ip": "192.168.1.88" }` | ESP32 健康状态摘要 |
 
 ### Device
 
@@ -47,8 +63,8 @@
 | `type` | string | `"air_conditioner"` | 设备类型 |
 | `location` | string | `"卧室"` | 设备所在位置 |
 | `controlType` | string | `"ir"` | 控制方式，当前为红外 |
-| `status` | string | `"off"` | 当前状态，`on` 或 `off` |
-| `assumedState` | string | `"off"` | 系统根据最后命令推测出的状态 |
+| `status` | string | `"unknown"` | 当前状态，`on`、`off` 或 `unknown` |
+| `assumedState` | string | `"unknown"` | 系统根据最后命令推测出的状态，首次启动为未知 |
 | `targetTemperature` | number 或 null | `26` | 空调设定温度 |
 | `lastCommand` | object 或 null | `{ "command": "turn_on" }` | 最后一次执行记录 |
 | `stateConfidence` | string | `"assumed"` | 状态可信度 |
@@ -65,9 +81,27 @@
 | `command` | string | `"turn_on"` | 目标动作 |
 | `value` | number | `26` | 可选参数，`set_temperature` 时使用 |
 
+## GET /api/health
+
+用于容器和反向代理健康检查，不触发 ESP32 或 LLM 探测。
+
+```json
+{
+  "ok": true,
+  "storage": "sqlite",
+  "timestamp": "2026-07-13T12:00:00.000Z"
+}
+```
+
+## GET /api/events
+
+返回最近的设备执行记录，支持 `limit=1..100`，默认 20 条。
+
 ## GET /api/state
 
 获取当前环境、设备和系统状态。
+
+响应还包含 `recentEvents`，用于展示 SQLite 中最近的设备执行记录。
 
 ### 成功响应
 
@@ -126,12 +160,30 @@
     "esp32Configured": true,
     "esp32Connected": true,
     "refreshedAt": "2026-05-09T08:57:00.000Z",
+    "esp32Connection": {
+      "mode": "auto",
+      "activeTransport": "websocket",
+      "connected": true,
+      "websocket": {
+        "path": "/ws/esp32",
+        "connected": true,
+        "deviceId": "esp32-living-room"
+      },
+      "serial": {
+        "serialPath": "COM3",
+        "baudRate": 115200,
+        "connected": true
+      }
+    },
     "esp32": {
-      "ip": "10.173.149.129",
-      "rssi": -13,
+      "transport": "websocket",
+      "deviceId": "esp32-living-room",
+      "ip": "192.168.1.88",
+      "rssi": -48,
       "serviceStarted": true,
       "sensorReady": true,
-      "wifiConnected": true
+      "wifiConnected": true,
+      "websocketConnected": true
     }
   }
 }
@@ -236,3 +288,76 @@ curl -X POST http://localhost:5000/api/execute \
   -H "Content-Type: application/json" \
   -d "{\"deviceId\":\"bedroom_ac\",\"command\":\"turn_on\"}"
 ```
+
+## 运行配置
+
+### GET /api/config
+
+返回可公开展示的系统、ESP32 和语音终端运行配置。
+
+### POST /api/config
+
+支持字段：`appMode`、`esp32Enabled`、`esp32Transport`、`esp32WsToken`、`serialPort`、`serialBaudRate`、`voiceEnabled`、`voiceVadThreshold`、`voiceSilenceMs`。
+
+`esp32Transport` 可设为 `auto`、`websocket` 或 `serial`。接口不会返回令牌原文，只返回 `esp32WsTokenConfigured`。
+
+配置保存采用增量更新，不会删除 `.env` 中未被本接口管理的字段。
+
+## 模型配置
+
+### GET /api/models
+
+返回 SQLite 中的 `llm`、`asr`、`tts` 三类配置。API Key 原文永不返回，只提供 `apiKeyConfigured` 状态。
+
+### PUT /api/models
+
+请求体使用 `models` 包裹需要更新的配置。API Key 留空会保留数据库中的原密钥。
+
+```json
+{
+  "models": {
+    "asr": {
+      "enabled": true,
+      "provider": "openai-compatible",
+      "baseUrl": "https://api.example.com/v1/audio/transcriptions",
+      "apiKey": "your_api_key",
+      "model": "gpt-4o-mini-transcribe",
+      "settings": {
+        "language": "zh",
+        "timeoutMs": 30000
+      }
+    }
+  }
+}
+```
+
+`baseUrl` 保存的是完整请求接口，后端不会自动追加路径。例如语言模型可填写 `/v1/chat/completions`，ASR/TTS 则填写各服务商文档给出的完整接口。模型配置保存后立即生效，不需要重启服务。环境变量中的旧模型配置仅在数据库记录首次创建时导入。
+
+## 设备管理
+
+- `GET /api/devices`：设备定义列表
+- `POST /api/devices`：添加设备
+- `PUT /api/devices/:id`：更新设备
+- `DELETE /api/devices/:id`：删除设备
+- `GET /api/device-types`：获取类型对应的动作和能力预设
+
+## 红外学习
+
+### POST /api/ir-learn/save
+
+普通开关动作提交 `deviceId`、`command` 和 `learned`。保存调温码时必须额外提交具体温度：
+
+```json
+{
+  "deviceId": "bedroom_ac",
+  "command": "set_temperature",
+  "value": 26,
+  "learned": {
+    "protocol": "COOLIX",
+    "code": "0xB2BF10",
+    "bits": 24
+  }
+}
+```
+
+调温码按温度存储在 `variants` 中。旧版单条调温码会迁移为 `legacy`，不会被自动用于任意温度。

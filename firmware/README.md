@@ -1,95 +1,88 @@
 # ESP32 Firmware
 
-这个目录用于存放 Smart Home AI 的硬件侧固件。
+当前固件位于 `esp32_ir_bridge/esp32_ir_bridge.ino`，支持两种通信通道：
 
-## 当前固件
+- Wi-Fi WebSocket：正常运行时的主连接
+- USB 串口：调试与网络故障兜底
 
-- `esp32_ir_bridge/esp32_ir_bridge.ino`
+两个通道复用同一套 JSON 命令：`health`、`ir_send`、`ir_learn`。WebSocket 消息额外使用 `requestId` 匹配命令和响应。
 
-这是串口版固件，负责：
+## 依赖
 
-1. 通过 USB 串口接收 Node.js 后端的命令
-2. 发射已验证的红外码
-3. 读取 DHT22 温湿度
-4. 定期通过串口上报传感器数据
-5. 在 OLED 上显示本地状态面板
+- Adafruit GFX Library
+- Adafruit SSD1306
+- DHT sensor library
+- IRremoteESP8266
+- WebSockets（arduinoWebSockets）
 
-## 通信协议
+Arduino CLI 安装示例：
 
-采用 JSON 行协议，每行一个 JSON 对象，以 `\n` 结尾。
+```powershell
+arduino-cli lib install "WebSockets"
+```
 
-### 后端 → ESP32
+## 网络配置
 
-| 命令 | 格式 | 说明 |
-|------|------|------|
-| 查询健康 | `{"cmd":"health"}` | 获取温湿度、系统状态 |
-| 发射红外 | `{"cmd":"ir_send","protocol":"COOLIX","code":"0xB21FB8","bits":24}` | 发射红外码 |
+复制配置模板：
 
-### ESP32 → 后端
+```powershell
+Copy-Item firmware/esp32_ir_bridge/secrets.example.h firmware/esp32_ir_bridge/secrets.h
+```
 
-| 消息 | 格式 | 说明 |
-|------|------|------|
-| 健康上报 | `{"type":"health","temperature":25.5,"humidity":60,"sensorReady":true,"acAssumedOn":false}` | 定期自动上报 + 回复 health 命令 |
-| 命令响应 | `{"type":"response","success":true,"message":"..."}` | 命令执行结果 |
+然后在 `secrets.h` 中填写：
 
-## 当前已验证红外码
+- Wi-Fi 名称与密码
+- 后端电脑的局域网 IP
+- 与后端 `.env` 中 `ESP32_WS_TOKEN` 相同的令牌
 
-- protocol: `COOLIX`
-- code: `0xB21FB8`
-- bits: `24`
+当前 WebSocketsClient 使用 URL 查询参数发送令牌。部署反向代理时应关闭 `/ws/esp32` 的查询参数访问日志，避免令牌写入日志。
+- ESP32 设备 ID
 
-## 依赖库
+`secrets.h` 已加入 `.gitignore`，不会提交 Wi-Fi 密码。
 
-- `Adafruit GFX Library`
-- `Adafruit SSD1306`
-- `DHT sensor library`
-- `IRremoteESP8266`
+## 后端 → ESP32
+
+```json
+{"type":"command","requestId":"cmd-123","cmd":"health"}
+```
+
+```json
+{"type":"command","requestId":"cmd-124","cmd":"ir_send","action":"turn_on","protocol":"COOLIX","code":"0xB21FB8","bits":24}
+```
+
+```json
+{"type":"command","requestId":"cmd-125","cmd":"ir_learn"}
+```
+
+## ESP32 → 后端
+
+```json
+{"type":"response","requestId":"cmd-123","ok":true}
+```
+
+```json
+{"type":"health","temperature":25.5,"humidity":60,"sensorReady":true,"wifiConnected":true,"websocketConnected":true,"ip":"192.168.1.88","rssi":-48}
+```
+
+固件每 5 秒通过可用通道上报一次健康状态。WebSocket 断线后每 5 秒重连，并启用协议心跳。
 
 ## 接线
 
-### DHT22
+- DHT22：`DAT -> GPIO6`、`VCC -> 3V3`、`GND -> GND`
+- IR Receiver：`OUT -> GPIO5`、`VCC -> 3V3`、`GND -> GND`
+- IR Transmitter：`DAT -> GPIO4`、`VCC -> 5V`、`GND -> GND`
+- OLED：`SCL -> GPIO18`、`SDA -> GPIO17`、`VCC -> 3V3`、`GND -> GND`
 
-- `DAT -> GPIO6`
-- `VCC -> 3V3`
-- `GND -> GND`
+## 编译
 
-### IR Receiver
+```powershell
+arduino-cli compile --fqbn esp32:esp32:esp32s3 --board-options FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB,CDCOnBoot=cdc firmware/esp32_ir_bridge
+```
 
-- `OUT -> GPIO5`
-- `VCC -> 3V3`
-- `GND -> GND`
+烧录时指定实际串口，例如：
 
-### IR Transmitter
+```powershell
+arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32s3 --board-options FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB,CDCOnBoot=cdc firmware/esp32_ir_bridge
+```
 
-- `DAT -> GPIO4`
-- `VCC -> 5V`
-- `GND -> GND`
-
-### OLED
-
-- `OLED GND -> GND`
-- `OLED VCC -> 3V3`
-- `OLED SCL -> GPIO18`
-- `OLED SDA -> GPIO17`
-
-## OLED 显示内容
-
-当前采用固定四行面板：
-
-1. `Serial: OK/NO`
-2. `Sensor: OK/NO`
-3. `T:22.2C H:56%`
-4. `AC: ON/OFF`
-
-## 使用方式
-
-1. 打开 `esp32_ir_bridge.ino`
-2. Arduino IDE 选择：
-   - Board: `ESP32S3 Dev Module`
-   - Port: `COM3`（选择实际串口）
-3. 编译并烧录
-4. 打开串口监视器，波特率 `115200`
-
-## 后续升级
-
-当前为串口版本，后续上云时固件只需添加 WebSocket 客户端，现有串口协议可直接复用。
+完整部署步骤见 [网络连接说明](../docs/ESP32_NETWORK.md)。

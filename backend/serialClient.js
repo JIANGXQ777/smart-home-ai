@@ -42,7 +42,7 @@ function handleData(line) {
     }
 
     if (data.type === 'health') {
-      responseBuffer.push(data);
+      responseBuffer.push({ ...data, receivedAt: new Date().toISOString() });
       if (responseBuffer.length > 5) responseBuffer.shift();
       return;
     }
@@ -63,7 +63,9 @@ function getLatestHealth() {
   return null;
 }
 
-function sendCommand(command) {
+function sendCommand(command, timeoutMs) {
+  const effectiveTimeout = timeoutMs || COMMAND_TIMEOUT_MS;
+
   return new Promise((resolve, reject) => {
     if (!port || !connected) {
       reject(new Error('串口未连接'));
@@ -81,7 +83,7 @@ function sendCommand(command) {
       pendingResolve = null;
       pendingTimeout = null;
       reject(new Error('串口命令超时'));
-    }, COMMAND_TIMEOUT_MS);
+    }, effectiveTimeout);
 
     port.write(json, (error) => {
       if (error) {
@@ -133,8 +135,12 @@ async function connectSerial() {
 
   port.on('close', () => {
     connected = false;
-    console.log('串口已断开，尝试重连...');
-    setTimeout(connectSerial, RECONNECT_DELAY_MS);
+    if (isSerialConfigured()) {
+      console.log('串口已断开，尝试重连...');
+      setTimeout(() => {
+        if (isSerialConfigured()) connectSerial().catch(() => {});
+      }, RECONNECT_DELAY_MS);
+    }
   });
 
   port.on('error', (error) => {
@@ -157,16 +163,17 @@ async function disconnectSerial() {
 
 async function getHardwareHealth(options = {}) {
   const timeoutMs = options.timeoutMs || COMMAND_TIMEOUT_MS;
-
-  const cached = getLatestHealth();
-  if (cached) {
-    return cached;
-  }
+  const staleAfterMs = Number(process.env.ESP32_HEALTH_STALE_MS || 12000);
 
   if (!connected) {
     const error = new Error('硬件串口未连接');
     error.code = 'SERIAL_DISCONNECTED';
     throw error;
+  }
+
+  const cached = getLatestHealth();
+  if (cached && Date.now() - Date.parse(cached.receivedAt) <= staleAfterMs) {
+    return cached;
   }
 
   try {
@@ -185,9 +192,11 @@ async function getHardwareHealth(options = {}) {
   throw error;
 }
 
-async function sendIrCommand(commandProfile) {
+async function sendIrCommand(commandProfile, context = {}) {
   const payload = {
     cmd: 'ir_send',
+    action: context.command || null,
+    value: context.value ?? null,
     protocol: commandProfile.protocol,
     code: commandProfile.code,
     bits: commandProfile.bits,
@@ -195,8 +204,13 @@ async function sendIrCommand(commandProfile) {
   };
 
   const response = await sendCommand(payload);
+  if (!response.ok) {
+    throw new Error(response.error || '红外发送失败');
+  }
   return response;
 }
+
+const LEARN_TIMEOUT_MS = 15000;
 
 function getConnectionTargets() {
   return {
@@ -206,11 +220,24 @@ function getConnectionTargets() {
   };
 }
 
+async function learnIrCode() {
+  const response = await sendCommand({ cmd: 'ir_learn' }, LEARN_TIMEOUT_MS);
+  if (!response.ok) {
+    throw new Error(response.error || '未收到红外信号（超时）');
+  }
+  return {
+    protocol: response.protocol,
+    code: response.code,
+    bits: response.bits
+  };
+}
+
 module.exports = {
   connectSerial,
   disconnectSerial,
   getConnectionTargets,
   getHardwareHealth,
   isSerialConfigured,
-  sendIrCommand
+  sendIrCommand,
+  learnIrCode
 };

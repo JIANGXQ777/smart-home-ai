@@ -1,0 +1,17 @@
+.git
+.github
+.claude
+.codex
+.agents
+node_modules
+frontend/dist
+data
+docs
+firmware
+device-simulator
+artifacts
+demo
+scripts
+skill
+.env
+*.log

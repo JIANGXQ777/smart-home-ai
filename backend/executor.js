@@ -1,5 +1,8 @@
 const { getDevice, updateDevice } = require('./devices');
 const { isEsp32Configured, sendIrCommand } = require('./esp32Client');
+const { getCode } = require('./irCodeStore');
+const { getAppMode } = require('./services/configService');
+const { recordCommandEvent } = require('./commandEventStore');
 
 function getTemperatureCapability(device) {
   return device.capabilities && device.capabilities.temperature;
@@ -38,73 +41,98 @@ function getNextStatus(command, currentStatus) {
   return currentStatus;
 }
 
-function buildSuccessMessage(device, command, value) {
+function buildSuccessMessage(device, command, value, simulated) {
+  const suffix = simulated ? '' : '指令已发送（状态为推测）';
   if (command === 'turn_on') {
-    return `${device.name}已打开`;
+    return simulated ? `${device.name}已打开` : `${device.name}开启${suffix}`;
   }
 
   if (command === 'turn_off') {
-    return `${device.name}已关闭`;
+    return simulated ? `${device.name}已关闭` : `${device.name}关闭${suffix}`;
   }
 
   if (command === 'set_temperature') {
-    return `${device.name}温度已设置为${value}度`;
+    return simulated
+      ? `${device.name}温度已设置为${value}度`
+      : `${device.name}${value}度${suffix}`;
   }
 
   return `${device.name}执行成功`;
 }
 
-function getLearnedCode(device, command) {
-  return device.irProfile && device.irProfile.learnedCodes && device.irProfile.learnedCodes[command];
+function getLearnedCode(device, command, value) {
+  return getCode(device.id, command, value);
 }
 
 async function execute(deviceId, command, value) {
   const device = getDevice(deviceId);
+  const finish = (result, details = {}) => {
+    try {
+      recordCommandEvent({
+        deviceId,
+        deviceName: device ? device.name : null,
+        command: command || 'unknown',
+        value,
+        source: details.source || 'validation',
+        success: result.success,
+        message: result.message,
+        stateConfidence: details.stateConfidence || null
+      });
+    } catch (error) {
+      console.error(`记录设备操作失败：${error.message}`);
+    }
+    return result;
+  };
+
   if (!device) {
-    return {
+    return finish({
       success: false,
       message: '设备不存在'
-    };
+    });
   }
 
   if (!device.actions.includes(command)) {
-    return {
+    return finish({
       success: false,
       message: '设备不支持该动作'
-    };
+    });
   }
 
   const valueError = validateValueIfNeeded(device, command, value);
   if (valueError) {
-    return {
+    return finish({
       success: false,
       message: valueError
-    };
+    });
   }
 
-  if (device.controlType === 'ir') {
-    const learnedCode = getLearnedCode(device, command);
+  const appMode = getAppMode();
+  const simulated = appMode === 'demo' || (appMode === 'hybrid' && process.env.ESP32_ENABLED === 'false');
+
+  if (device.controlType === 'ir' && !simulated) {
+    const learnedCode = getLearnedCode(device, command, value);
     if (!learnedCode) {
-      return {
+      const target = command === 'set_temperature' ? `${value}度` : command;
+      return finish({
         success: false,
-        message: `${device.name} 还没有录入 ${command} 的红外码`
-      };
+        message: `${device.name} 还没有录入 ${target} 的红外码`
+      }, { source: 'esp32_ir_bridge' });
     }
 
     if (!isEsp32Configured()) {
-      return {
+      return finish({
         success: false,
-        message: 'ESP32 未配置，请确认 SERIAL_PORT'
-      };
+        message: 'ESP32 未配置，请确认 WebSocket 或串口连接设置'
+      }, { source: 'esp32_ir_bridge' });
     }
 
     try {
-      await sendIrCommand(learnedCode);
+      await sendIrCommand(learnedCode, { command, value });
     } catch (error) {
-      return {
+      return finish({
         success: false,
         message: `ESP32 执行失败：${error.message}`
-      };
+      }, { source: 'esp32_ir_bridge' });
     }
   }
 
@@ -113,10 +141,10 @@ async function execute(deviceId, command, value) {
     lastCommand: {
       command,
       value: value === undefined ? null : value,
-      source: device.controlType === 'ir' ? 'esp32_ir_bridge' : 'virtual_executor',
+      source: device.controlType === 'ir' && !simulated ? 'esp32_ir_bridge' : 'virtual_executor',
       executedAt: new Date().toISOString()
     },
-    stateConfidence: device.controlType === 'ir' ? 'assumed' : 'reported'
+    stateConfidence: device.controlType === 'ir' && !simulated ? 'assumed' : 'simulated'
   };
 
   if (command === 'set_temperature') {
@@ -130,21 +158,27 @@ async function execute(deviceId, command, value) {
   });
 
   if (!updated) {
-    return {
+    return finish({
       success: false,
       message: '状态更新失败'
-    };
+    }, {
+      source: updates.lastCommand.source,
+      stateConfidence: updates.stateConfidence
+    });
   }
 
-  return {
+  return finish({
     success: true,
-    message: buildSuccessMessage(device, command, value),
+    message: buildSuccessMessage(device, command, value, simulated),
     deviceId,
     status: nextStatus,
     assumedState: nextStatus,
     targetTemperature: command === 'set_temperature' ? value : device.targetTemperature,
     stateConfidence: updates.stateConfidence
-  };
+  }, {
+    source: updates.lastCommand.source,
+    stateConfidence: updates.stateConfidence
+  });
 }
 
 module.exports = {

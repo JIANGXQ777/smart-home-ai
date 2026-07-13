@@ -1,0 +1,10 @@
+{
+  "bedroom_ac": {
+    "turn_on": {
+      "protocol": "COOLIX",
+      "code": "0xB21FB8",
+      "bits": 24,
+      "learnedAt": "2026-01-01T00:00:00.000Z"
+    }
+  }
+}

@@ -1,14 +1,19 @@
 // OpenAI-compatible 大模型客户端
 // 调用 Chat Completions 接口并解析模型返回的结构化决策
 
+const { getModelConfig } = require('./modelConfigStore');
+
 function getConfig() {
+  const config = getModelConfig('llm');
   return {
-    enabled: process.env.LLM_ENABLED === 'true',
-    apiKey: process.env.LLM_API_KEY,
-    baseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.LLM_MODEL || 'gpt-4o-mini',
-    timeoutMs: Number(process.env.LLM_TIMEOUT_MS || 15000),
-    maxCompletionTokens: Number(process.env.LLM_MAX_COMPLETION_TOKENS || 1024)
+    enabled: config.enabled,
+    provider: config.provider,
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: Number(config.settings.timeoutMs || 15000),
+    maxCompletionTokens: Number(config.settings.maxCompletionTokens || 1024),
+    temperature: Number(config.settings.temperature ?? 0.2)
   };
 }
 
@@ -67,11 +72,11 @@ function buildUserPrompt({ message, environment, devices, hardware }) {
     ],
     outputExamples: [
       {
-        reply: '当前卧室温度29度，睡前会偏热。我建议把卧室空调设置为26度，需要我帮你设置吗？',
+        reply: '检测到室温偏高，建议将空调设置为26度，需要我帮你设置吗？',
         intent: 'comfort_sleep',
         needConfirm: true,
         action: {
-          deviceId: 'bedroom_ac',
+          deviceId: '<请从 devices 数组中选择设备 id>',
           command: 'set_temperature',
           value: 26
         }
@@ -86,12 +91,8 @@ function buildUserPrompt({ message, environment, devices, hardware }) {
   });
 }
 
-function buildEndpoint(baseUrl) {
-  const normalized = baseUrl.replace(/\/+$/, '');
-  if (normalized.endsWith('/chat/completions')) {
-    return normalized;
-  }
-  return `${normalized}/chat/completions`;
+function buildEndpoint(endpoint) {
+  return String(endpoint || '').trim();
 }
 
 function extractJsonText(text) {
@@ -136,7 +137,7 @@ async function callLlmDecision({ message, environment, devices, hardware }) {
       },
       body: JSON.stringify({
         model: config.model,
-        temperature: 0.2,
+        temperature: config.temperature,
         response_format: { type: 'json_object' },
         max_completion_tokens: Number.isFinite(config.maxCompletionTokens) && config.maxCompletionTokens > 0
           ? config.maxCompletionTokens
