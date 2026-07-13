@@ -152,6 +152,7 @@ vite.config.ts.timestamp-*
 # Project generated / temporary directories
 demo/
 artifacts/
+.claude/
 .codex/
 scripts/
 skill/
