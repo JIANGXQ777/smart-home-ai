@@ -9,7 +9,7 @@ services:
       PORT: 5000
       ESP32_TRANSPORT: ${DOCKER_ESP32_TRANSPORT:-websocket}
     ports:
-      - "${DOCKER_BIND_ADDRESS:-0.0.0.0}:5000:5000"
+      - "${DOCKER_BIND_ADDRESS:-0.0.0.0}:${DOCKER_HOST_PORT:-5000}:5000"
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env

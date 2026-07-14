@@ -4,7 +4,6 @@
 .codex
 .agents
 node_modules
-frontend/dist
 data
 docs
 firmware

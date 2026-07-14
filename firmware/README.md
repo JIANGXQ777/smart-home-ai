@@ -2,7 +2,7 @@
 
 当前固件位于 `esp32_ir_bridge/esp32_ir_bridge.ino`，支持两种通信通道：
 
-- Wi-Fi WebSocket：正常运行时的主连接
+- Wi-Fi WSS：正常运行时通过公网固定域名建立的加密主连接
 - USB 串口：调试与网络故障兜底
 
 两个通道复用同一套 JSON 命令：`health`、`ir_send`、`ir_learn`。WebSocket 消息额外使用 `requestId` 匹配命令和响应。
@@ -32,10 +32,10 @@ Copy-Item firmware/esp32_ir_bridge/secrets.example.h firmware/esp32_ir_bridge/se
 然后在 `secrets.h` 中填写：
 
 - Wi-Fi 名称与密码
-- 后端电脑的局域网 IP
+- 后端的公网 WSS 域名、443 端口和 `BACKEND_USE_TLS=1`
 - 与后端 `.env` 中 `ESP32_WS_TOKEN` 相同的令牌
 
-当前 WebSocketsClient 使用 URL 查询参数发送令牌。部署反向代理时应关闭 `/ws/esp32` 的查询参数访问日志，避免令牌写入日志。
+当前 WebSocketsClient 使用加密的 WSS 连接，并通过 URL 查询参数发送令牌。反向代理应关闭 `/ws/esp32` 的查询参数访问日志，避免令牌写入日志。固件会通过 NTP 校时，并使用 ISRG Root X1 校验当前 Let's Encrypt 证书链。
 - ESP32 设备 ID
 
 `secrets.h` 已加入 `.gitignore`，不会提交 Wi-Fi 密码。

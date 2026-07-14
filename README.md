@@ -33,7 +33,7 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 
 当前已经跑通的能力：
 
-- ESP32 通过局域网 WebSocket 主动连接 Node.js 后端，USB 串口自动兜底
+- ESP32 通过公网 WSS/443 主动连接 Node.js 后端，USB 串口保留为调试兜底
 - ESP32 发射真实红外码控制旧家电
 - DHT22 温湿度实时读取
 - 控制台实时展示温度、湿度、时间、系统状态
@@ -124,8 +124,8 @@ Smart Home AI 的目标不是让用户整套更换设备，而是通过：
 - 设备定义管理
 - 分温度红外码学习
 - Demo / Hybrid / Hardware 运行模式
-- ESP32-S3 双向 PCM 语音终端
-- 后端 VAD、语音识别、AI 决策和语音合成
+- 控制台电脑麦克风语音输入
+- 浏览器 ASR、AI 决策与电脑扬声器语音回复
 - 深色、浅色主题与移动端布局
 
 ## 设备模型
@@ -269,7 +269,7 @@ data/smart-home.db
 docker compose up -d --build
 ```
 
-Docker Desktop 下无法直接使用 Windows 的 `COM3`，Compose 默认强制使用 WebSocket。需要让局域网 ESP32 直连时，将 `DOCKER_BIND_ADDRESS` 设置为 `0.0.0.0`；部署到公网服务器并使用反向代理时改为 `127.0.0.1`。
+Docker Desktop 下无法直接使用 Windows 的 `COM3`，Compose 默认使用 WebSocket。当前 ESP32 通过固定公网域名的 WSS/443 接入，容器端口保持绑定到 `127.0.0.1`，由公网网关转发 WebSocket 升级请求。
 
 公网部署必须放在 HTTPS/WSS 反向代理之后并增加访问认证，不能直接暴露控制 API。详细方案见 [服务器部署建议](docs/DEPLOYMENT.md)。需要多用户或多实例时，再将数据层迁移到 PostgreSQL。
 
@@ -288,15 +288,15 @@ Docker Desktop 下无法直接使用 Windows 的 `COM3`，Compose 默认强制�
 - `health`：读取硬件与温湿度状态
 - `ir_send`：发射指定协议的红外码
 - `ir_learn`：捕获遥控器红外码
-- 二进制 PCM：INMP441 采集与 MAX98357A 播放
+- 语音交互已迁移到控制台：电脑麦克风采集与电脑扬声器播放
 
-N16R8 音频固件编译：
+ESP32 固件编译：
 
 ```bash
 npm run firmware:compile
 ```
 
-语音接线、协议和调试步骤见 [硬件实时语音说明](docs/VOICE.md)。
+控制台麦克风、ASR 和电脑扬声器流程见 [控制台浏览器语音说明](docs/VOICE.md)。
 
 当前推荐的连接方式是：
 

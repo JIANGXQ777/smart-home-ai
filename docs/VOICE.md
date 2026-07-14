@@ -1,73 +1,43 @@
-# ESP32-S3 硬件实时语音
+# 控制台浏览器语音
+
+当前语音交互全部集中在控制台的“AI 助手”页面。ESP32 不再承担麦克风录音、VAD 或扬声器播放，只继续负责红外控制、温湿度传感器和设备状态。
 
 ## 架构
 
-ESP32-S3 只负责 I2S 音频采集、播放和 WebSocket 传输。后端负责 VAD、语音识别、AI 决策、语音确认和 TTS。
-
 ```text
-INMP441 -> ESP32-S3 -> WebSocket PCM -> Node 后端
-MAX98357A <- ESP32-S3 <- WebSocket PCM <- Node 后端
+电脑麦克风
+-> 浏览器 Web Audio API
+-> 16 kHz / 16-bit / 单声道 PCM
+-> POST /api/voice/transcribe
+-> ASR 转文字
+-> 现有 /api/chat AI 对话与动作确认
+-> POST /api/voice/synthesize
+-> WAV
+-> 电脑默认扬声器
 ```
 
-第一版采用半双工：设备播放回复时暂停麦克风上传，避免扬声器回声再次触发识别。
+语音输入和文字输入共用同一套 AI 决策、动作校验和用户确认流程。语音层不能绕过 `decisionValidator` 或直接执行设备动作。
 
-## 接线
+## 浏览器要求
 
-INMP441：
-
-| INMP441 | ESP32-S3 |
-|---|---|
-| VDD | 3.3V |
-| GND | GND |
-| SCK | GPIO12 |
-| WS | GPIO13 |
-| SD | GPIO14 |
-| L/R | GND（左声道） |
-
-MAX98357A：
-
-| MAX98357A | ESP32-S3 |
-|---|---|
-| VIN | 5V |
-| GND | GND |
-| BCLK | GPIO12 |
-| LRC | GPIO13 |
-| DIN | GPIO15 |
-| SD | GPIO21（播放时启用，空闲时硬件静音） |
-| SPK+ / SPK- | 4Ω 扬声器两端 |
-
-MAX98357A 是桥接输出，扬声器任意一端都不能接 GND。
+- 推荐使用固定 HTTPS 地址：`https://smart-home-ai.tail29b726.ts.net`
+- `localhost` 也可使用麦克风。
+- 普通局域网 HTTP 地址可以控制设备，但浏览器通常不会向非安全来源开放麦克风。
+- 首次点击麦克风时需要允许浏览器访问电脑麦克风。
+- 录音会启用浏览器回声消除、降噪和自动增益。
 
 ## 音频格式
 
 - 16000 Hz
 - 16-bit little-endian
 - 单声道
-- 每帧 20ms
-- 每帧 320 个采样、640 字节
+- 浏览器采集后在本地重采样
+- 默认录音时长范围：0.4 秒至 30 秒
+- AI 助手页面会在 20 秒时自动结束一次录音
 
-控制事件使用 JSON 文本消息，PCM 使用原始 WebSocket 二进制消息，不使用 Base64。
+## 模型配置
 
-## N16R8 编译
-
-```bash
-npm run firmware:compile
-```
-
-等价 Arduino CLI 配置：
-
-```text
-Flash Size: 16MB
-PSRAM: OPI PSRAM
-Partition: 16M Flash (3MB APP/9.9MB FATFS)
-USB CDC On Boot: Enabled
-```
-
-大容量播放缓冲区放在 PSRAM，I2S DMA 缓冲区仍由内部 SRAM 提供。
-
-## 后端配置
-
-推荐在控制中心的“模型配置”页面分别设置 ASR 和 TTS。下面的环境变量只用于 SQLite 模型记录首次初始化：
+在“模型配置”页面分别启用并配置 ASR 和 TTS。下面的环境变量只用于 SQLite 首次初始化：
 
 ```env
 VOICE_ENABLED=true
@@ -79,49 +49,54 @@ VOICE_STT_MODEL=gpt-4o-mini-transcribe
 VOICE_TTS_MODEL=gpt-4o-mini-tts
 VOICE_TTS_VOICE=alloy
 VOICE_SAMPLE_RATE=16000
-VOICE_VAD_THRESHOLD=700
-VOICE_SILENCE_MS=700
+BROWSER_VOICE_MIN_MS=400
+BROWSER_VOICE_MAX_MS=30000
 ```
 
-ASR、TTS 与文本 LLM 可分别配置服务商、服务地址、请求接口、模型和 API Key，避免把语言模型密钥发送给语音服务。服务地址和请求接口都由用户填写。
-
-### Xiaomi MiMo V2.5
-
-后端会在服务商填写 `xiaomimimo`，或服务地址使用 `*.xiaomimimo.com` 时自动启用 MiMo 协议适配：
-
-- 鉴权使用 `api-key` 请求头。
-- ASR 将 ESP32 PCM 封装为 WAV，再通过 Base64 `input_audio` 发送。
-- TTS 使用 `assistant` 消息传入待播文本，解析响应中的 Base64 WAV，并重采样为 ESP32 使用的 16kHz PCM。
-
-推荐配置：
-
-| 类型 | 模型 | 请求接口 |
-|---|---|---|
-| ASR | `mimo-v2.5-asr` | `/v1/chat/completions` |
-| TTS | `mimo-v2.5-tts` | `/v1/chat/completions` |
-
-TTS 音色可填写 `mimo_default`、`冰糖`、`茉莉`、`苏打`、`白桦` 等官方 Voice ID。
-
-TTS 播放音量默认为 `0.25`，用于避免 MAX98357A 在语音峰值时过载失真，可在模型配置中按 `0.05-1` 调整。控制中心的“播放 TTS 测试语音”可绕过 ASR 和语言模型，单独验证合成与扬声器播放。
-
-## 电脑音频输出
-
-系统设置中的语音输出设备可设为 `browser`。该模式下 ESP32 继续上传麦克风 PCM，TTS 结果由控制中心网页播放到 Windows 默认音频设备；如果蓝牙音响已设为 Windows 默认输出，声音会从蓝牙音响播放。每次页面重新打开后，需要点击顶部“启用电脑播放”以授予浏览器音频权限。旁边的音量按钮可实时调整网页播放音量，设置保存在当前浏览器中。
-
-## 调试顺序
-
-1. 烧录固件并确认串口输出 `flash=16MB psram=8MB`。
-2. 打开总览，确认“硬件语音”显示“音频在线”或“可对话”。
-3. 在设置页点击“播放硬件测试音”，确认扬声器输出 440Hz 提示音。
-4. 观察总览音量数值，正常说话时应明显高于安静环境。
-5. 根据环境调整 `VOICE_VAD_THRESHOLD`，避免底噪误触发。
-6. 配置语音 API Key 后再测试完整识别、确认和设备执行。
+Xiaomi MiMo 配置仍使用 `api-key`、Base64 WAV 和 Chat Completions 消息协议；OpenAI 兼容服务继续使用音频接口。
 
 ## 接口
 
-- `GET /api/voice/status`
-- `POST /api/voice/test-tone`
-- `POST /api/voice/capture`，请求体：`{"enabled": true}`
-- `POST /api/voice/manual-recording`，请求体 `{"enabled": true}` 开始硬件麦克风录音，`{"enabled": false}` 停止并提交 ASR、语言模型和 TTS 处理。处理结果可从 `/api/voice/status` 的 `manualResult` 读取。
+### `GET /api/voice/status`
 
-设备控制仍经过原有 `aiAgent -> decisionValidator -> executor`，语音层不能绕过动作校验。
+返回浏览器语音模式、ASR/TTS 配置状态、采样率和最近处理状态。
+
+### `POST /api/voice/transcribe`
+
+- `Content-Type: application/octet-stream`
+- `X-Audio-Sample-Rate: 16000`
+- 请求体：16 kHz 单声道 16-bit PCM
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "text": "打开空调",
+  "audio": {
+    "durationMs": 1800,
+    "sampleRate": 16000,
+    "bytes": 57600
+  }
+}
+```
+
+### `POST /api/voice/synthesize`
+
+请求体：
+
+```json
+{ "text": "好的，需要我现在执行吗？" }
+```
+
+成功时返回 `audio/wav`，由 AI 助手页面直接通过电脑默认音频设备播放。
+
+## 使用流程
+
+1. 在模型配置中确认 ASR 和 TTS 已启用。
+2. 打开 AI 助手页面。
+3. 点击麦克风并允许浏览器权限。
+4. 说完后再次点击麦克风；最长 20 秒会自动停止。
+5. 检查识别文字和 AI 回复。
+6. 需要设备动作时，在页面中点击“确认执行”。
+7. 可在 AI 助手语音控制条中关闭语音回复或调整电脑播放音量。

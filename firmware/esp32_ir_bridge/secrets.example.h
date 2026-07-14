@@ -4,12 +4,16 @@
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Use the LAN IP address of the computer running the Node.js backend.
-#define BACKEND_HOST "192.168.1.100"
-#define BACKEND_PORT 5000
+// Public WSS endpoint. Set BACKEND_USE_TLS to 0 only for a trusted LAN ws:// endpoint.
+#define BACKEND_HOST "smart-home-ai.tail29b726.ts.net"
+#define BACKEND_PORT 443
+#define BACKEND_USE_TLS 1
 #define ESP32_WS_PATH "/ws/esp32"
 #define ESP32_WS_TOKEN "generate-a-random-token-at-least-32-characters"
 #define ESP32_DEVICE_ID "esp32-living-room"
+
+// Browser voice is used by default. Keep the ESP32 microphone and speaker disabled.
+#define VOICE_AUDIO_DIAGNOSTIC_DISABLE 1
 
 // Optional voice I2S pin overrides. The defaults match docs/VOICE.md.
 #define VOICE_I2S_BCLK_PIN 12

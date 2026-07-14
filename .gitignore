@@ -155,5 +155,10 @@ artifacts/
 .claude/
 .codex/
 scripts/
+!scripts/
+scripts/*
+!scripts/public-gateway.js
+!scripts/start-public-access.ps1
+!scripts/stop-public-access.ps1
 skill/
 docs/generated/

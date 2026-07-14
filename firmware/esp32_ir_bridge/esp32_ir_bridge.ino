@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <WebSocketsClient.h>
+#include <time.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
@@ -10,6 +11,7 @@
 #include <IRutils.h>
 #include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
+#include "tls_ca.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -44,8 +46,11 @@ const uint8_t OLED_SCL_PIN = 18;
 #ifndef WS_HANDSHAKE_DIAGNOSTIC
 #define WS_HANDSHAKE_DIAGNOSTIC 0
 #endif
+#ifndef BACKEND_USE_TLS
+#define BACKEND_USE_TLS 0
+#endif
 #ifndef VOICE_AUDIO_DIAGNOSTIC_DISABLE
-#define VOICE_AUDIO_DIAGNOSTIC_DISABLE 0
+#define VOICE_AUDIO_DIAGNOSTIC_DISABLE 1
 #endif
 
 const uint32_t VOICE_SAMPLE_RATE = 16000;
@@ -524,12 +529,22 @@ void setupNetwork() {
   WiFi.persistent(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+#if BACKEND_USE_TLS
+  // Certificate validation requires a current clock. SNTP keeps retrying in
+  // the background if Wi-Fi is not ready yet; WebSocket reconnects every 5 s.
+  configTime(0, 0, "pool.ntp.org", "time.cloudflare.com", "time.google.com");
+#endif
+
   webSocketPath = String(ESP32_WS_PATH);
   webSocketPath += "?deviceId=" + urlEncode(String(ESP32_DEVICE_ID));
   if (String(ESP32_WS_TOKEN).length() > 0) {
     webSocketPath += "&token=" + urlEncode(String(ESP32_WS_TOKEN));
   }
+#if BACKEND_USE_TLS
+  webSocket.beginSslWithCA(BACKEND_HOST, BACKEND_PORT, webSocketPath.c_str(), ISRG_ROOT_X1);
+#else
   webSocket.begin(BACKEND_HOST, BACKEND_PORT, webSocketPath.c_str());
+#endif
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
 #if WS_HANDSHAKE_DIAGNOSTIC != 2

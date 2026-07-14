@@ -8,17 +8,19 @@ export const useChatStore = defineStore('chat', () => {
   const pendingAction = ref(null)
   const sending = ref(false)
 
-  async function send(text) {
+  async function send(text, options = {}) {
     const message = text.trim()
     if (!message || sending.value) return
-    messages.value.push({ role: 'user', text: message })
+    messages.value.push({ role: 'user', text: message, voice: Boolean(options.voice) })
     sending.value = true
     try {
       const result = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message }) })
       messages.value.push({ role: 'assistant', text: result.reply })
       pendingAction.value = result.needConfirm ? result.action : null
+      return result
     } catch (error) {
       messages.value.push({ role: 'assistant', text: error.message, error: true })
+      return { error: error.message }
     } finally {
       sending.value = false
     }
@@ -37,10 +39,5 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function appendVoiceExchange(transcript, reply, error = '') {
-    if (transcript) messages.value.push({ role: 'user', text: transcript, voice: true })
-    if (reply || error) messages.value.push({ role: 'assistant', text: error || reply, error: Boolean(error), voice: true })
-  }
-
-  return { messages, pendingAction, sending, send, confirm, appendVoiceExchange }
+  return { messages, pendingAction, sending, send, confirm }
 })

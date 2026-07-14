@@ -18,8 +18,8 @@ test('配置保存拒绝换行注入和无效范围', () => {
   }), /不能包含换行符/);
   assert.throws(() => saveConfig({
     appMode: 'hybrid',
-    voiceVadThreshold: 10
-  }), /50-10000/);
+    serialBaudRate: 10
+  }), /1200-4000000/);
 });
 
 test('合法配置通过临时文件原子替换保存', () => {
@@ -28,16 +28,12 @@ test('合法配置通过临时文件原子替换保存', () => {
     esp32Enabled: false,
     esp32Transport: 'auto',
     serialPort: 'COM3',
-    serialBaudRate: 115200,
-    voiceEnabled: true,
-    voicePlaybackTarget: 'browser',
-    voiceVadThreshold: 800,
-    voiceSilenceMs: 650
+    serialBaudRate: 115200
   });
   assert.equal(config.appMode, 'hybrid');
   const content = fs.readFileSync(envPath, 'utf8');
-  assert.match(content, /VOICE_VAD_THRESHOLD=800/);
-  assert.match(content, /VOICE_PLAYBACK_TARGET=browser/);
+  assert.match(content, /SERIAL_BAUD_RATE=115200/);
+  assert.doesNotMatch(content, /VOICE_PLAYBACK_TARGET/);
   assert.equal(fs.readdirSync(testDir).filter(name => name.endsWith('.tmp')).length, 0);
 });
 

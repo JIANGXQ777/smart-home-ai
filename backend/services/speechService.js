@@ -4,7 +4,6 @@ function getSpeechConfig() {
   const asr = getModelConfig('asr');
   const tts = getModelConfig('tts');
   return {
-    enabled: process.env.VOICE_ENABLED === 'true',
     inputSampleRate: Number(process.env.VOICE_SAMPLE_RATE || 16000),
     asr: {
       enabled: asr.enabled,
@@ -32,10 +31,17 @@ function getSpeechConfig() {
 }
 
 function isSpeechConfigured() {
-  const config = getSpeechConfig();
-  return config.enabled &&
-    config.asr.enabled && Boolean(config.asr.apiKey && config.asr.model && config.asr.baseUrl && config.asr.endpointPath) &&
-    config.tts.enabled && Boolean(config.tts.apiKey && config.tts.model && config.tts.baseUrl && config.tts.endpointPath);
+  return isAsrConfigured() && isTtsConfigured();
+}
+
+function isAsrConfigured() {
+  const asr = getSpeechConfig().asr;
+  return asr.enabled && Boolean(asr.apiKey && asr.model && asr.baseUrl && asr.endpointPath);
+}
+
+function isTtsConfigured() {
+  const tts = getSpeechConfig().tts;
+  return tts.enabled && Boolean(tts.apiKey && tts.model && tts.baseUrl && tts.endpointPath);
 }
 
 function buildRequestUrl(baseUrl, endpointPath) {
@@ -209,7 +215,7 @@ async function synthesizeMiMo(text, config, tts) {
 async function transcribePcm(pcm) {
   const config = getSpeechConfig();
   const asr = config.asr;
-  if (!config.enabled || !asr.enabled || !asr.apiKey || !asr.model || !asr.baseUrl || !asr.endpointPath) {
+  if (!asr.enabled || !asr.apiKey || !asr.model || !asr.baseUrl || !asr.endpointPath) {
     throw new Error('ASR 服务尚未配置');
   }
   if (isMiMoConfig(asr)) return transcribeMiMo(pcm, config, asr);
@@ -232,7 +238,7 @@ async function transcribePcm(pcm) {
 async function synthesizeSpeech(text) {
   const config = getSpeechConfig();
   const tts = config.tts;
-  if (!config.enabled || !tts.enabled || !tts.apiKey || !tts.model || !tts.baseUrl || !tts.endpointPath) {
+  if (!tts.enabled || !tts.apiKey || !tts.model || !tts.baseUrl || !tts.endpointPath) {
     throw new Error('TTS 服务尚未配置');
   }
   if (isMiMoConfig(tts)) return synthesizeMiMo(text, config, tts);
@@ -263,8 +269,10 @@ module.exports = {
   applyPcmGain,
   createWav,
   getSpeechConfig,
+  isAsrConfigured,
   isMiMoConfig,
   isSpeechConfigured,
+  isTtsConfigured,
   resamplePcm16,
   synthesizeSpeech,
   transcribePcm

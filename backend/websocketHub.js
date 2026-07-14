@@ -45,15 +45,8 @@ function safeRemoteAddress(request) {
   return request.socket.remoteAddress || null;
 }
 
-function getVoiceService() {
-  return require('./services/voiceService');
-}
-
 function handleMessage(client, rawMessage, isBinary = false) {
-  if (isBinary) {
-    if (rawMessage.length <= 64 * 1024) getVoiceService().handleAudioFrame(client, Buffer.from(rawMessage));
-    return;
-  }
+  if (isBinary) return;
   let data;
   try {
     data = JSON.parse(rawMessage.toString());
@@ -62,8 +55,6 @@ function handleMessage(client, rawMessage, isBinary = false) {
   }
 
   client.lastSeenAt = new Date().toISOString();
-
-  if (getVoiceService().handleControlMessage(client, data)) return;
 
   if (data.type === 'hello') {
     client.deviceId = data.deviceId || client.deviceId;
@@ -151,7 +142,6 @@ function initializeWebSocketServer(httpServer) {
       if (activeClient !== client) return;
       activeClient = null;
       latestHealth = null;
-      getVoiceService().detachClient(client);
       clearPending(new Error('ESP32 WebSocket 已断开'));
       console.log(`ESP32 WebSocket 已断开：${client.deviceId}`);
     });

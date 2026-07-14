@@ -15,13 +15,9 @@
 | GET | `/api/health` | 获取轻量服务和数据库健康状态 |
 | GET | `/api/state` | 获取当前环境、设备与系统状态 |
 | GET | `/api/events` | 获取最近的持久化设备执行记录 |
-| GET | `/api/voice/status` | 获取硬件语音连接、VAD 和处理状态 |
-| POST | `/api/voice/capture` | 启用或暂停 ESP32 麦克风上传 |
-| POST | `/api/voice/manual-recording` | 开始或结束一次由页面控制的硬件麦克风录音，请求体为 `{"enabled": true/false}` |
-| POST | `/api/voice/test-tone` | 在 MAX98357A 扬声器播放测试音 |
-| POST | `/api/voice/test-speech` | 使用当前 TTS 配置合成并播放测试语音 |
-| GET | `/api/voice/browser-audio` | 获取等待电脑播放的最新 WAV 音频 |
-| POST | `/api/voice/browser-audio/:id/finished` | 通知后端电脑播放结束并恢复麦克风采集 |
+| GET | `/api/voice/status` | 获取控制台 ASR、TTS 和处理状态 |
+| POST | `/api/voice/transcribe` | 上传浏览器生成的 16 kHz 单声道 16-bit PCM 并返回识别文字 |
+| POST | `/api/voice/synthesize` | 提交文字并返回供电脑扬声器播放的 WAV 音频 |
 | POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和建议动作 |
 | POST | `/api/execute` | 用户确认后执行设备动作 |
 | GET/POST | `/api/config` | 读取或保存运行配置 |
@@ -297,11 +293,11 @@ curl -X POST http://localhost:5000/api/execute \
 
 ### GET /api/config
 
-返回可公开展示的系统、ESP32 和语音终端运行配置。
+返回可公开展示的系统和 ESP32 运行配置。
 
 ### POST /api/config
 
-支持字段：`appMode`、`esp32Enabled`、`esp32Transport`、`esp32WsToken`、`serialPort`、`serialBaudRate`、`voiceEnabled`、`voiceVadThreshold`、`voiceSilenceMs`。
+支持字段：`appMode`、`esp32Enabled`、`esp32Transport`、`esp32WsToken`、`serialPort`、`serialBaudRate`。
 
 `esp32Transport` 可设为 `auto`、`websocket` 或 `serial`。接口不会返回令牌原文，只返回 `esp32WsTokenConfigured`。
 

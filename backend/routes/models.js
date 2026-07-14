@@ -4,7 +4,6 @@ const {
   saveModelConfigs
 } = require('../modelConfigStore');
 const { refreshLlmHealth } = require('../services/stateService');
-const { setCapture } = require('../services/voiceService');
 
 const router = express.Router();
 
@@ -15,7 +14,6 @@ router.get('/', (req, res) => {
 router.put('/', async (req, res) => {
   try {
     const models = saveModelConfigs(req.body?.models || req.body);
-    setCapture(process.env.VOICE_ENABLED === 'true');
     refreshLlmHealth().catch(() => {});
     res.json({
       success: true,

@@ -1,0 +1,5 @@
+FROM smart-home-ai-smart-home-ai:latest
+
+WORKDIR /app
+COPY backend ./backend
+COPY frontend/dist ./frontend/dist
