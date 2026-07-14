@@ -36,7 +36,7 @@ async function submit() {
       <div class="login-copy">
         <small>SECURE HOME CONTROL</small>
         <h1>让家的状态，<br>始终触手可及。</h1>
-        <p>通过加密网络安全访问控制台，同时保留本地局域网控制能力。</p>
+        <p>AI 理解你的自然语言，红外改造家里的传统电器。无需更换旧设备，也能获得对话控制、远程管理与自动化能力。</p>
       </div>
       <div class="login-security"><ShieldCheck :size="20" /><div><strong>安全连接已启用</strong><span>HTTPS · 会话保护 · 登录限制</span></div></div>
     </section>

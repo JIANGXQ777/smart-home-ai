@@ -33,7 +33,7 @@ async function save() {
     <section class="card">
       <div class="section-title"><div><small>RUNTIME</small><h2>运行模式</h2></div></div>
       <label>模式<select v-model="form.appMode"><option value="demo">Demo · 规则 + 模拟环境</option><option value="hybrid">Hybrid · 模型 + 可选硬件</option><option value="hardware">Hardware · 模型 + ESP32</option></select></label>
-      <p class="muted">模型服务在“模型配置”中管理；电脑麦克风和扬声器集中在“AI 助手”页面使用。</p>
+      <p class="muted">模型服务在“模型配置”中管理；麦克风和扬声器集中在“AI 助手”页面使用。</p>
     </section>
     <section class="card">
       <div class="section-title"><div><small>HARDWARE</small><h2>ESP32 连接</h2></div></div>
@@ -45,7 +45,7 @@ async function save() {
     <section class="card browser-voice-settings">
       <div class="section-title"><div><small>CONSOLE VOICE</small><h2>控制台语音交互</h2></div></div>
       <p>硬件语音终端已停用。录音、识别和播报现在全部在 AI 助手页面完成：</p>
-      <ul><li>电脑麦克风按键录音</li><li>ASR 转文字后进入现有 AI 对话</li><li>TTS 通过电脑默认扬声器播放</li><li>ESP32 继续负责红外、传感器和设备状态</li></ul>
+      <ul><li>麦克风按键录音</li><li>ASR 转文字后进入现有 AI 对话</li><li>TTS 通过默认扬声器播放</li><li>ESP32 继续负责红外、传感器和设备状态</li></ul>
       <RouterLink class="btn secondary" :to="{ name: 'assistant' }">前往 AI 助手</RouterLink>
     </section>
     <div class="settings-actions"><div><span v-if="notice" class="alert">{{ notice }}</span><span v-if="error" class="alert error">{{ error }}</span></div><button class="btn primary" :disabled="saving"><Save :size="18"/>{{ saving ? '保存中…' : '保存系统设置' }}</button></div>

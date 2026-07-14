@@ -5,7 +5,7 @@
 ## 架构
 
 ```text
-电脑麦克风
+麦克风
 -> 浏览器 Web Audio API
 -> 16 kHz / 16-bit / 单声道 PCM
 -> POST /api/voice/transcribe
@@ -13,7 +13,7 @@
 -> 现有 /api/chat AI 对话与动作确认
 -> POST /api/voice/synthesize
 -> WAV
--> 电脑默认扬声器
+-> 默认扬声器
 ```
 
 语音输入和文字输入共用同一套 AI 决策、动作校验和用户确认流程。语音层不能绕过 `decisionValidator` 或直接执行设备动作。
@@ -23,7 +23,7 @@
 - 推荐使用固定 HTTPS 地址：`https://smart-home-ai.tail29b726.ts.net`
 - `localhost` 也可使用麦克风。
 - 普通局域网 HTTP 地址可以控制设备，但浏览器通常不会向非安全来源开放麦克风。
-- 首次点击麦克风时需要允许浏览器访问电脑麦克风。
+- 首次点击麦克风时需要允许浏览器访问设备麦克风。
 - 录音会启用浏览器回声消除、降噪和自动增益。
 
 ## 音频格式
@@ -89,7 +89,7 @@ Xiaomi MiMo 配置仍使用 `api-key`、Base64 WAV 和 Chat Completions 消息�
 { "text": "好的，需要我现在执行吗？" }
 ```
 
-成功时返回 `audio/wav`，由 AI 助手页面直接通过电脑默认音频设备播放。
+成功时返回 `audio/wav`，由 AI 助手页面直接通过默认音频设备播放。
 
 ## 使用流程
 
@@ -99,4 +99,4 @@ Xiaomi MiMo 配置仍使用 `api-key`、Base64 WAV 和 Chat Completions 消息�
 4. 说完后再次点击麦克风；最长 20 秒会自动停止。
 5. 检查识别文字和 AI 回复。
 6. 需要设备动作时，在页面中点击“确认执行”。
-7. 可在 AI 助手语音控制条中关闭语音回复或调整电脑播放音量。
+7. 可在 AI 助手语音控制条中关闭语音回复或调整播放音量。

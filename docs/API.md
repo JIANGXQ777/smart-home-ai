@@ -7,17 +7,23 @@
 - 服务地址：`http://localhost:5000`
 - 数据格式：`JSON`
 - 请求头：`Content-Type: application/json`
+- 认证方式：登录后由浏览器自动携带 HttpOnly Cookie
+
+除 `/api/health` 和 `/api/auth/*` 外，所有 `/api/*` 接口都要求已登录。未登录返回 `401 authentication_required`，登录安全参数未配置时返回 `503 authentication_not_configured`。
 
 ## 接口总览
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | 获取轻量服务和数据库健康状态 |
+| GET | `/api/auth/status` | 获取认证配置和当前登录状态 |
+| POST | `/api/auth/login` | 登录控制台并设置会话 Cookie |
+| POST | `/api/auth/logout` | 清除当前会话 |
 | GET | `/api/state` | 获取当前环境、设备与系统状态 |
 | GET | `/api/events` | 获取最近的持久化设备执行记录 |
 | GET | `/api/voice/status` | 获取控制台 ASR、TTS 和处理状态 |
 | POST | `/api/voice/transcribe` | 上传浏览器生成的 16 kHz 单声道 16-bit PCM 并返回识别文字 |
-| POST | `/api/voice/synthesize` | 提交文字并返回供电脑扬声器播放的 WAV 音频 |
+| POST | `/api/voice/synthesize` | 提交文字并返回供扬声器播放的 WAV 音频 |
 | POST | `/api/chat` | 提交自然语言输入，获取 AI 回复和建议动作 |
 | POST | `/api/execute` | 用户确认后执行设备动作 |
 | GET/POST | `/api/config` | 读取或保存运行配置 |
@@ -28,6 +34,45 @@
 | POST | `/api/ir-learn/start` | 开始红外学习 |
 | POST | `/api/ir-learn/save` | 保存学习结果 |
 | GET/DELETE | `/api/ir-learn/codes` | 获取或删除红外码 |
+
+## 认证
+
+### GET /api/auth/status
+
+返回认证是否已安全配置、当前请求是否已登录，以及登录用户信息。
+
+```json
+{
+  "configured": true,
+  "authenticated": false,
+  "user": null
+}
+```
+
+### POST /api/auth/login
+
+```json
+{
+  "username": "admin",
+  "password": "your-password"
+}
+```
+
+成功后返回用户信息，并设置有效期 7 天的 `smart_home_session` Cookie。连续登录失败达到限制时返回 `429`，并通过 `Retry-After` 响应头告知等待时间。
+
+### POST /api/auth/logout
+
+清除 `smart_home_session` Cookie。
+
+命令行调用受保护接口时，需要保存并携带 Cookie：
+
+```bash
+curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-password"}'
+
+curl -b cookies.txt http://localhost:5000/api/state
+```
 
 ## 数据模型
 

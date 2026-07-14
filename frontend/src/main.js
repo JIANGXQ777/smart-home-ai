@@ -4,7 +4,12 @@ import App from './App.vue'
 import router from './router'
 import './styles/main.css'
 
-document.documentElement.dataset.theme = localStorage.getItem('theme') === 'light' ? 'light' : 'dark'
+const themeVersion = 'light-console-v2'
+if (localStorage.getItem('themeVersion') !== themeVersion) {
+  localStorage.setItem('theme', 'light')
+  localStorage.setItem('themeVersion', themeVersion)
+}
+document.documentElement.dataset.theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
 
 window.addEventListener('auth:required', () => {
   if (router.currentRoute.value.name !== 'login') {

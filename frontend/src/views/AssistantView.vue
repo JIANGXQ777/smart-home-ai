@@ -25,18 +25,18 @@ const recording = computed(() => phase.value === 'recording')
 const busy = computed(() => !['idle', 'recording'].includes(phase.value))
 const recordButtonDisabled = computed(() => !recording.value && (busy.value || chat.sending || !voiceStatus.value.asrConfigured))
 const recordButtonLabel = computed(() => {
-  if (recording.value) return '停止电脑麦克风录音'
+  if (recording.value) return '停止麦克风录音'
   if (phase.value === 'transcribing') return '正在识别语音'
   if (phase.value === 'thinking') return 'AI 正在生成回复'
-  if (phase.value === 'speaking') return '电脑正在播放回复'
-  return '使用电脑麦克风录音'
+  if (phase.value === 'speaking') return '正在播放回复'
+  return '使用麦克风录音'
 })
 const phaseText = computed(() => ({
   idle: '点击麦克风开始说话',
   recording: `正在录音 ${elapsedSeconds.value}s，再次点击结束`,
   transcribing: '正在把语音转换为文字…',
   thinking: 'AI 正在理解并生成回复…',
-  speaking: '正在通过电脑扬声器播放…'
+  speaking: '正在通过扬声器播放…'
 })[phase.value])
 
 watch(speakerEnabled, value => localStorage.setItem('voiceReplyEnabled', String(value)))
@@ -63,8 +63,8 @@ function clearTimers() {
 
 function friendlyMicrophoneError(error) {
   if (error?.name === 'NotAllowedError') return '麦克风权限被拒绝，请在浏览器地址栏中允许麦克风访问'
-  if (error?.name === 'NotFoundError') return '没有找到可用的电脑麦克风'
-  return error?.message || '电脑麦克风启动失败'
+  if (error?.name === 'NotFoundError') return '没有找到可用的麦克风'
+  return error?.message || '麦克风启动失败'
 }
 
 async function startRecording() {
@@ -131,7 +131,7 @@ async function stopRecording() {
       phase.value = 'speaking'
       await speakReply(result.reply)
     } else if (result?.reply && speakerEnabled.value && !voiceStatus.value.ttsConfigured) {
-      voiceHint.value = '文字回复已生成；配置并启用 TTS 后可自动通过电脑扬声器播放。'
+      voiceHint.value = '文字回复已生成；配置并启用 TTS 后可自动通过扬声器播放。'
     }
   } catch (error) {
     voiceError.value = error.message || '语音交互失败'
@@ -165,8 +165,8 @@ onBeforeUnmount(async () => {
       <div class="device-icon"><Sparkles/></div>
       <div class="assistant-intro-copy"><h2>家庭控制助手</h2><p>文字与语音都在控制台完成；设备动作仍会等待你的确认。</p></div>
       <div class="voice-capabilities" aria-label="控制台语音状态">
-        <span :class="{ ready: voiceStatus.asrConfigured }"><Mic :size="14"/>{{ voiceStatus.asrConfigured ? '电脑麦克风可用' : 'ASR 未配置' }}</span>
-        <span :class="{ ready: voiceStatus.ttsConfigured }"><Volume2 :size="14"/>{{ voiceStatus.ttsConfigured ? '电脑扬声器可用' : 'TTS 未配置' }}</span>
+        <span :class="{ ready: voiceStatus.asrConfigured }"><Mic :size="14"/>{{ voiceStatus.asrConfigured ? '麦克风可用' : 'ASR 未配置' }}</span>
+        <span :class="{ ready: voiceStatus.ttsConfigured }"><Volume2 :size="14"/>{{ voiceStatus.ttsConfigured ? '扬声器可用' : 'TTS 未配置' }}</span>
       </div>
     </div>
     <div ref="stream" class="chat-stream" aria-live="polite">
@@ -175,7 +175,7 @@ onBeforeUnmount(async () => {
         <button v-for="x in ['打开空调','把空调调到 26 度','你能控制什么设备？']" :key="x" class="chip" @click="input=x;send()">{{ x }}</button>
       </div>
       <div v-for="(message,index) in chat.messages" :key="index" class="message" :class="[message.role,message.error?'message-error':'']">
-        <small>{{ message.role === 'user' ? (message.voice ? '你 · 电脑麦克风' : '你') : 'AI' }}</small>
+        <small>{{ message.role === 'user' ? (message.voice ? '你 · 麦克风' : '你') : 'AI' }}</small>
         <p>{{ message.text }}</p>
       </div>
     </div>
@@ -194,7 +194,7 @@ onBeforeUnmount(async () => {
         <button type="button" class="voice-reply-toggle" :class="{ active: speakerEnabled }" :aria-pressed="speakerEnabled" @click="speakerEnabled=!speakerEnabled">
           <Volume2 v-if="speakerEnabled" :size="16"/><VolumeX v-else :size="16"/>语音回复
         </button>
-        <label>音量 <input v-model.number="volume" type="range" min="0" max="1" step="0.05" :disabled="!speakerEnabled" aria-label="电脑语音回复音量"></label>
+        <label>音量 <input v-model.number="volume" type="range" min="0" max="1" step="0.05" :disabled="!speakerEnabled" aria-label="语音回复音量"></label>
       </div>
     </div>
     <div v-if="voiceError" class="voice-notice error" role="alert">{{ voiceError }}</div>

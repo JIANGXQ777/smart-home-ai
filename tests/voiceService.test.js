@@ -13,7 +13,7 @@ process.env.BROWSER_VOICE_MAX_MS = '30000';
 const { getVoiceStatus, validateBrowserPcm } = require('../backend/services/voiceService');
 const { closeDatabase } = require('../backend/database');
 
-test('控制台语音固定使用电脑麦克风和电脑扬声器', () => {
+test('控制台语音固定使用麦克风和扬声器', () => {
   const status = getVoiceStatus();
   assert.equal(status.mode, 'browser');
   assert.equal(status.input, 'computer-microphone');

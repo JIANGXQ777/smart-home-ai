@@ -17,7 +17,7 @@ The frontend is Vue 3 + Vite + Pinia + Vue Router. Production assets are built i
 ```
 User input → Vue frontend → POST /api/chat → aiAgent.js
   → ruleAgent.js (fast path: keyword→type matching for explicit commands)
-  → llmClient.js (fallback: DeepSeek API via OpenAI-compatible endpoint)
+  → llmClient.js (fallback: OpenAI-compatible LLM endpoint)
   → decisionValidator.js (schema + capability check)
   → frontend shows suggestion + confirm button
   → POST /api/execute → executor.js
@@ -58,9 +58,9 @@ DHT22 reads every 3s, health JSON sent every 5s. OLED shows 4-line status: temp/
 | `server.js` | Express routes, state aggregation, config hot-reload, LLM health polling |
 | `aiAgent.js` | Decision orchestrator: dynamic type matching → LLM fallback, multi-device handling, hardware-offline guard |
 | `ruleAgent.js` | Type-based fast path for Chinese commands — traverses all device types dynamically |
-| `llmClient.js` | DeepSeek API client, system prompt, JSON parsing with markdown stripping |
+| `llmClient.js` | OpenAI-compatible LLM client, system prompt, JSON parsing with markdown stripping |
 | `decisionValidator.js` | Schema validation + capability check on LLM output |
-| `executor.js` | Validates command, looks up `irProfile.learnedCodes`, sends IR via serial, updates in-memory device state |
+| `executor.js` | Validates command, looks up `irProfile.learnedCodes`, sends IR via WebSocket/serial, persists assumed device state |
 | `database.js` | SQLite connection, schema migration, WAL and metadata |
 | `deviceStore.js` | Device definitions and runtime-state repository |
 | `irCodeStore.js` | SQLite IR code repository and legacy JSON import |
@@ -73,7 +73,10 @@ DHT22 reads every 3s, health JSON sent every 5s. OLED shows 4-line status: temp/
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/api/health` | Lightweight service/database health check |
+| GET/POST | `/api/auth/status`, `/api/auth/login`, `/api/auth/logout` | Console session authentication |
 | GET | `/api/state` | Environment + devices + system status |
+| GET | `/api/events` | Recent persisted command events |
 | POST | `/api/chat` | AI chat decision |
 | POST | `/api/execute` | Execute device action |
 | GET | `/api/devices` | List device definitions |
@@ -87,6 +90,8 @@ DHT22 reads every 3s, health JSON sent every 5s. OLED shows 4-line status: temp/
 | DELETE | `/api/ir-learn/codes` | Delete a learned code |
 | GET | `/api/config` | Read config |
 | POST | `/api/config` | Write config (hot-reloads `.env`) |
+| GET/PUT | `/api/models` | Read or update SQLite-backed LLM/ASR/TTS config |
+| GET/POST | `/api/voice/status`, `/api/voice/transcribe`, `/api/voice/synthesize` | Browser voice status, ASR and TTS |
 
 ## Data files
 
@@ -97,9 +102,13 @@ DHT22 reads every 3s, health JSON sent every 5s. OLED shows 4-line status: temp/
 
 ## Config
 
-`.env` file at project root. Settings panel accessible via gear icon in topbar (integrated into main console, not a separate page). POST `/api/config` writes `.env` and hot-reloads `process.env` without restart. Env vars:
+`.env` file at project root. System and transport settings are stored there; LLM/ASR/TTS settings are persisted in SQLite after first initialization. POST `/api/config` writes `.env` and hot-reloads `process.env` without restart. Important env vars:
 
-- `LLM_ENABLED`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_TIMEOUT_MS`, `LLM_MAX_COMPLETION_TOKENS`
-- `ESP32_ENABLED`, `SERIAL_PORT`, `SERIAL_BAUD_RATE`, `ESP32_REQUEST_TIMEOUT_MS`
+- `APP_MODE`, `DATABASE_PATH`
+- `APP_AUTH_USERNAME`, `APP_AUTH_PASSWORD`, `APP_SESSION_SECRET`
+- `LLM_ENABLED`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_ENDPOINT_PATH`, `LLM_MODEL`
+- `VOICE_ENABLED`, `VOICE_API_KEY`, `VOICE_BASE_URL`, ASR/TTS endpoint and model variables
+- `ESP32_ENABLED`, `ESP32_TRANSPORT`, `ESP32_WS_PATH`, `ESP32_WS_TOKEN`
+- `SERIAL_PORT`, `SERIAL_BAUD_RATE`, `ESP32_REQUEST_TIMEOUT_MS`
 
 When `LLM_ENABLED=false`, all decisions go through `ruleAgent.js` only.

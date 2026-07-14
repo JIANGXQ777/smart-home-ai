@@ -152,12 +152,18 @@ vite.config.ts.timestamp-*
 # Project generated / temporary directories
 demo/
 artifacts/
+outputs/
+pcb/
+docs/images/
+*.inspect.ndjson
 .claude/
 .codex/
+.agents/
 scripts/
 !scripts/
 scripts/*
 !scripts/public-gateway.js
+!scripts/start-smart-home-ai.ps1
 !scripts/start-public-access.ps1
 !scripts/stop-public-access.ps1
 skill/
